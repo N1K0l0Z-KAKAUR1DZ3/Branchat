@@ -2,7 +2,7 @@
 #include <iostream>
 #include <format>
 #include <vector>
-
+#include "Root_Chat.cpp"
 struct Chat : RootChat{
     int parentId;
     int rootId;

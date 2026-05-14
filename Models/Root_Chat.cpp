@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
-
+#include  "Message.cpp"
 struct RootChat {
     std::string name;
     std::vector<Message> messages;
