@@ -1,7 +1,7 @@
 # CLion/JetBrains files
-.idea/
+../.idea/
 cmake-build-*/
-
+../Secrets
 # Compiled object files
 *.o
 *.obj
