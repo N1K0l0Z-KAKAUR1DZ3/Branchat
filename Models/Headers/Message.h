@@ -11,6 +11,7 @@ struct Message {
     std::string Role;
     std::string Content;
     std::chrono::system_clock::time_point Timestamp;
+
     Message(const int rootId, const int chatId, std::string role, std::string content = "", const std::chrono::system_clock::time_point& timestamp = std::chrono::system_clock::now()) :
         RootId(rootId),
         ChatID(chatId),

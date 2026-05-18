@@ -3,7 +3,7 @@ project(Branchat1)
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(Branchat1 main.cpp Services/Sources/Session.cpp APIs/Sources/DBAPI.cpp APIs/nanodbc_dependency/nanodbc.cpp
+add_executable(Branchat1 main.cpp Services/Sources/Session.cpp APIs/Sources/DBAPI.cpp Dependencies/nanodbc/nanodbc.cpp
         Models/Sources/Group.cpp
         Models/Sources/Root_Chat.cpp
         Models/Sources/Chat.cpp
@@ -20,6 +20,8 @@ add_executable(Branchat1 main.cpp Services/Sources/Session.cpp APIs/Sources/DBAP
         ../../../../usr/local/include/Session.h
         APIs/Headers/DBAPI.h
         Services/Headers/Session.h
+        APIs/Headers/AIAPI.h
+        APIs/Sources/AIAPI.cpp
 )
 
 target_link_libraries(Branchat1 odbc)

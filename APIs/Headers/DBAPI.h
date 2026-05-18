@@ -1,7 +1,7 @@
 #pragma once
 #include "../../Models/Headers/Base.h"
 #include "../../Models/Headers/Tree.h"
-#include "../nanodbc_dependency/nanodbc.h"
+#include "../../Dependencies/nanodbc/nanodbc.h"
 #include <fstream>
 #include <algorithm>
 

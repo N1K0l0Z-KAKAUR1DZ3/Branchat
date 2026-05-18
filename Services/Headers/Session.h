@@ -1,17 +1,19 @@
 #pragma once
 #include "../../APIs/Headers/DBAPI.h"
+#include "../../APIs/Headers/AIAPI.h"
 
 #ifndef BRANCHAT1_SESSION_H
 #define BRANCHAT1_SESSION_H
 class Session {
+
 public:
-    static Base base;
-    static Tree ChatTree;
-    static std::unique_ptr<RootChat> chatPtr;
-    static int Conte
+    inline static Base base;
+    inline static Tree ChatTree;
+    inline static std::unique_ptr<RootChat> chatPtr;
+
     Session();
-    static void LoadChatTree(const int rootId);
-    static void FocusChat(const int chatId);
-    static void
+    static void LoadChatTree(int rootId);
+    static void FocusChat(int chatId);
+
 };
 #endif //BRANCHAT1_SESSION_H
