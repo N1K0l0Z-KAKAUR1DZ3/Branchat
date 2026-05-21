@@ -13,5 +13,10 @@ struct Group {
         name(std::move(_name)),
         roots(std::move(_roots)){}
     void PrintData();
+    RootChat& FindRootChat(int targetId);
+    void DeleteRootChat(int targetRootId);
+    void AddRoot(const std::string& Name);
+    void Delete() const;
+    void Rename(const std::string& newName);
 };
 #endif //BRANCHAT1_GROUP_H

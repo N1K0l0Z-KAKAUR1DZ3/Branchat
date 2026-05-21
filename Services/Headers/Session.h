@@ -5,15 +5,30 @@
 #ifndef BRANCHAT1_SESSION_H
 #define BRANCHAT1_SESSION_H
 class Session {
-
+    static void SaveMessage();
 public:
     inline static Base base;
     inline static Tree ChatTree;
-    inline static std::unique_ptr<RootChat> chatPtr;
+    inline static RootChat* chatPtr;
+    inline static bool pointingAtRoot;
 
     Session();
-    static void LoadChatTree(int rootId);
-    static void FocusChat(int chatId);
 
+    static void ReloadBase();
+    static void ReloadTree();
+
+    static void LoadTree(int rootId);
+    static void resetFocus();
+    // static Message ReceiveAIResponse(const Message& promptMsg);
+
+    static void AddBranch(int parentId, int rootId, int groupId, const std::string& name);
+    static RootChat AddRoot(int groupId, const std::string& name);
+    static Group AddGroup(const std::string& name);
+
+    static void DeleteGroup(int groupId);
+    static void DeleteChat(int chatId);
+
+    static void RenameChat(int chatId, const std::string& newName);
+    static void RenameGroup(int groupId, const std::string& newName);
 };
 #endif //BRANCHAT1_SESSION_H

@@ -9,19 +9,25 @@ struct RootChat {
     std::vector<Message> messages;
     int id;
     int groupId;
+
     explicit RootChat(std::string _name, std::vector<Message>& _messages , const int _id,const int _groupId) :
         name(std::move(_name)),
         messages(std::move(_messages)),
         id(_id),
         groupId(_groupId){}
     explicit RootChat() = default;
-    virtual ~RootChat() = default;
+    virtual ~RootChat();
 protected:
     void PrintConversation() const;
 public:
     virtual void PrintData() const;
+    //session interactions
+    // virtual void SendPrompt(const std::string& prompt);
+    virtual void CreateBranch(const std::string& newChatName);
     virtual void FocusChat();
-    void CreateBranch();
+    virtual void Delete();
+    void LoadTree();
+    void Rename(const std::string& newName);
 };
 
 #endif //BRANCHAT1_ROOT_CHAT_H

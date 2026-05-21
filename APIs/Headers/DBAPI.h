@@ -17,11 +17,12 @@ class DBAPI {
     static std::vector<RootChat> ExtractGroupRoots(const std::vector<RootChat>& allRoots, int GroupId);
     static int GetBranchCount(int rootId);
     static std::vector<RootChat> GetRootS();
+    static std::vector<Message> GetBaseMessages();
 public:
     static void init();
     // read
     static Base GetBase();
-    static Tree GetChatTree(int rootId);
+    static std::unordered_map<int, Chat> GetChatTree(int rootId);
     // create
     static Group SaveGroup(const std::string& name);
     static RootChat SaveRootChat(int groupId, const std::string& name);

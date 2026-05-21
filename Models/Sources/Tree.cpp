@@ -2,9 +2,13 @@
 
 void Tree::PrintData() const {
     std::cout << "\n\n=====================================================\n";
-    rootChat.PrintData();
     for (auto& ptr : branchingChats) {
         ptr.second.PrintData();
     }
     std::cout << "=====================================================\n\n";
+}
+
+void Tree::Clear() {
+    rootPtr = nullptr;
+    branchingChats.clear();
 }

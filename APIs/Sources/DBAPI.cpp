@@ -14,6 +14,27 @@ std::chrono::system_clock::time_point DBAPI::parseSqlTimestamp(const std::string
     oss << std::put_time(timeStruct, "%Y-%m-%d %H:%M:%S");
     return oss.str();
 }
+std::vector<Message> DBAPI::GetBaseMessages() {
+    std::cout << "fetching messages" << "\n";
+    std::vector<Message> baseMessages;
+    nanodbc::statement stmt(*dbConnection);
+    nanodbc::prepare(stmt, "{CALL Branchat.GetBaseMessages()}");
+    nanodbc::result result = nanodbc::execute(stmt);
+
+    while (result.next()) {
+        std::cout << "building message" << std::endl;
+        const auto rootId = result.get<int>("rootId");
+        const auto chatId = result.get<int>("chatId");
+        const auto role = result.get<std::string>("role");
+        const auto timesStamp = parseSqlTimestamp(result.get<std::string>("timestamp"));
+        const auto content = result.get<std::string>("content");
+
+        auto currentMsg = Message(rootId, chatId, role, content, timesStamp);
+        baseMessages.push_back(currentMsg);
+    }
+    std::cout << "fetched messages" << "\n";
+    return baseMessages;
+}
  std::vector<Message> DBAPI::GetTreeMessages(const int RootId) {
     std::cout << "fetching messages" << "\n";
     std::vector<Message> treeMessages;
@@ -61,12 +82,14 @@ std::chrono::system_clock::time_point DBAPI::parseSqlTimestamp(const std::string
  std::vector<RootChat> DBAPI::GetRootS() {
     std::cout << "fetching all roots" << std::endl;
     std::vector<RootChat> roots;
+    std::vector<Message> baseMessages = GetBaseMessages();
     nanodbc::statement stmt(*dbConnection);
     nanodbc::prepare(stmt, "{CALL Branchat.GetRoots()}");
     nanodbc::result result = nanodbc::execute(stmt);
-    std::vector<Message> msgs = {};
     while (result.next()) {
-        auto newRoot = RootChat(result.get<std::string>("name"),msgs, result.get<int>("id"), result.get<int>("groupId"));
+        const auto rootId =  result.get<int>("id");
+        auto msgs = ExtractChatMessages(baseMessages, rootId);
+        auto newRoot = RootChat(result.get<std::string>("name"),msgs, rootId, result.get<int>("groupId"));
         roots.push_back(newRoot);
     }
     std::cout << " fetched all roots" << std::endl;
@@ -100,7 +123,7 @@ std::chrono::system_clock::time_point DBAPI::parseSqlTimestamp(const std::string
     std::cout << " fetched all groups" << std::endl;
     return Base(groups);
 }
- Tree DBAPI::GetChatTree (const int rootId) {
+ std::unordered_map<int, Chat> DBAPI::GetChatTree (const int rootId) {
     std::cout << "fetching Tree of root " << rootId << "\n";
     const int treeChatCount = GetBranchCount(rootId);
     if (treeChatCount == 0) {
@@ -108,23 +131,18 @@ std::chrono::system_clock::time_point DBAPI::parseSqlTimestamp(const std::string
         throw std::invalid_argument(std::format("tree with the root if of {} does not exist", rootId));
     }
 
-    Tree chat_tree;
+    std::unordered_map<int, Chat> chats;
     std::vector<Message> treeMessages = GetTreeMessages(rootId);
-    chat_tree.branchingChats.reserve(treeChatCount - 1);
+    chats.reserve(treeChatCount - 1);
         nanodbc::statement stmt(*dbConnection);
         nanodbc::prepare(stmt, "{CALL Branchat.GetChatTree(?)}");
         stmt.bind(0, &rootId);
         nanodbc::result result = nanodbc::execute(stmt);
-        if (result.next()) {
-            const auto chatId = result.get<int>("id");
-            auto chatMessages = ExtractChatMessages(treeMessages, chatId);
-            chat_tree.rootChat = RootChat(result.get<std::string>("name"), chatMessages, chatId, result.get<int>("groupId"));
-        }
 
         while (result.next()) {
             const int chatId = result.get<int>("id");
             auto chatMessages = ExtractChatMessages(treeMessages, chatId);
-            chat_tree.branchingChats.emplace(chatId, Chat(result.get<int>("parentId"),
+            chats.emplace(chatId, Chat(result.get<int>("parentId"),
                                                               result.get<std::string>("name"),
                                                                 chatMessages,
                                                              result.get<int>("rootId"),
@@ -132,7 +150,7 @@ std::chrono::system_clock::time_point DBAPI::parseSqlTimestamp(const std::string
                                                                 result.get<int>("groupId")));
         }
         std::cout << "fetched Tree" << "\n";
-        return chat_tree;
+        return chats;
 }
 //
   Group DBAPI::SaveGroup(const std::string& name) {
@@ -227,3 +245,4 @@ std::chrono::system_clock::time_point DBAPI::parseSqlTimestamp(const std::string
     nanodbc::execute(stmt);
     std::cout << "Delete success" << std::endl;
 }
+
