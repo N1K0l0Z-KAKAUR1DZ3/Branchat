@@ -14,6 +14,8 @@ void RootChat::FocusChat() {
     Session::pointingAtRoot = true;
     Session::chatPtr = this;
     Session::ChatTree.rootPtr = this;
+    Session::additionalContextPtr = nullptr;
+    Session::currentContextPtr = &messages;
 }
 RootChat::~RootChat() {
     if (Session::chatPtr == this) {
@@ -24,12 +26,12 @@ RootChat::~RootChat() {
     }
 }
 
-// void RootChat::SendPrompt(const std::string& prompt) {
-//     const auto promptMsg = Message(id, id, "User", prompt);
-//     messages.push_back(promptMsg);
-//     const auto responseMsg = Session::ReceiveAIResponse(promptMsg);
-//     messages.push_back(responseMsg);
-// }
+void RootChat::SendPrompt(const std::string& prompt) {
+    const auto promptMsg = Message(id, id, "User", prompt);
+    messages.push_back(promptMsg);
+    const auto responseMsg = Session::ReceiveAIResponse();
+    messages.push_back(responseMsg);
+}
 
 void RootChat::CreateBranch(const std::string& newChatName) {
     Session::AddBranch(id, id, groupId, newChatName);

@@ -11,10 +11,20 @@ void Session::LoadTree(const int rootId) {
 void Session::resetFocus() {
     chatPtr = nullptr;
     pointingAtRoot = false;
+    currentContextPtr = nullptr;
+    additionalContextPtr = nullptr;
 }
-// Message Session::ReceiveAIResponse(const Message& prompt) {
-//
-// }
+
+Message Session::ReceiveAIResponse() {
+    std::vector<Message> contextPayload;
+    if (additionalContextPtr != nullptr) {
+        contextPayload.insert(contextPayload.begin(), additionalContextPtr->begin(), additionalContextPtr->end());
+    }
+    contextPayload.insert(contextPayload.begin(), currentContextPtr->begin(), currentContextPtr->end());
+    auto response = AIAPI::GetAIResponse(contextPayload);
+    return response;
+}
+
 void Session::AddBranch(const int parentId, const int rootId,const int groupId, const std::string& name) {
     const auto newChat = DBAPI::SaveBranchingChat(name, parentId, rootId, groupId);
     ChatTree.branchingChats.emplace(newChat.id, newChat);

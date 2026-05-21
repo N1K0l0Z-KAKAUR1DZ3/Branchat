@@ -22,7 +22,7 @@ protected:
 public:
     virtual void PrintData() const;
     //session interactions
-    // virtual void SendPrompt(const std::string& prompt);
+    virtual void SendPrompt(const std::string& prompt);
     virtual void CreateBranch(const std::string& newChatName);
     virtual void FocusChat();
     virtual void Delete();

@@ -13,7 +13,7 @@ struct Chat : RootChat{
         parentId(_parentId),
         rootId(_rootId){}
     void PrintData() const override;
-    // void SendPrompt(const std::string& prompt) override;
+    void SendPrompt(const std::string& prompt) override;
     void CreateBranch(const std::string &newChatName) override;
     void FocusChat() override;
     void Delete() override;

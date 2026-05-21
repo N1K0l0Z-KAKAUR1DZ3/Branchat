@@ -11,6 +11,8 @@ public:
     inline static Tree ChatTree;
     inline static RootChat* chatPtr;
     inline static bool pointingAtRoot;
+    inline static std::vector<Message>* additionalContextPtr;
+    inline static std::vector<Message>* currentContextPtr;
 
     Session();
 
@@ -19,7 +21,7 @@ public:
 
     static void LoadTree(int rootId);
     static void resetFocus();
-    // static Message ReceiveAIResponse(const Message& promptMsg);
+    static Message ReceiveAIResponse();
 
     static void AddBranch(int parentId, int rootId, int groupId, const std::string& name);
     static RootChat AddRoot(int groupId, const std::string& name);
