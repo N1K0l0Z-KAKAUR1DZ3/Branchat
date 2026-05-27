@@ -5,9 +5,10 @@
 #ifndef BRANCHAT1_TREE_H
 #define BRANCHAT1_TREE_H
 struct Tree {
-    RootChat *rootPtr;
-    std::unordered_map<int, Chat> branchingChats;
-    void PrintData() const ;
-    void Clear();
+    inline static RootChat *rootPtr;
+    inline static std::unordered_map<int, Chat> branchingChats;
+    static void PrintData() ;
+    static Chat* FindChatById(int targetId);
+    static void Clear();
 };
 #endif //BRANCHAT1_TREE_H

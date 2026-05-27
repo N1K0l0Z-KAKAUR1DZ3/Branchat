@@ -12,25 +12,27 @@ void RootChat::PrintConversation() const {
 }
 void RootChat::FocusChat() {
     Session::pointingAtRoot = true;
-    Session::chatPtr = this;
-    Session::ChatTree.rootPtr = this;
+    Session::activeChatId = id;
+    Session::activeGroupId = groupId;
+    Tree::rootPtr = this;
     Session::additionalContextPtr = nullptr;
     Session::currentContextPtr = &messages;
+    Session::rehookChatPtr();
 }
 RootChat::~RootChat() {
     if (Session::chatPtr == this) {
         Session::resetFocus();
     }
-    if (Session::ChatTree.rootPtr == this) {
-        Session::ChatTree.Clear();
+    if (Tree::rootPtr == this) {
+        Tree::Clear();
     }
 }
 
 void RootChat::SendPrompt(const std::string& prompt) {
-    const auto promptMsg = Message(id, id, "User", prompt);
-    messages.push_back(promptMsg);
-    const auto responseMsg = Session::ReceiveAIResponse();
-    messages.push_back(responseMsg);
+    messages.push_back(Message(id, id, "user", prompt));
+    Session::SaveMessage(messages.back());
+    messages.push_back(Message(id, id, "model", Session::ReceiveAIResponse()));
+    Session::SaveMessage(messages.back());
 }
 
 void RootChat::CreateBranch(const std::string& newChatName) {
@@ -38,11 +40,11 @@ void RootChat::CreateBranch(const std::string& newChatName) {
 }
 void RootChat::LoadTree() {
     Session::LoadTree(id);
-    Session::ChatTree.rootPtr = this;
+    Tree::rootPtr = this;
 }
 void RootChat::Delete() {
     Session::DeleteChat(id);
-    Session::base.FindGroup(groupId).DeleteRootChat(id);
+    Base::FindGroup(groupId).DeleteRootChat(id);
     Session::ReloadBase();
 }
 void RootChat::Rename(const std::string &newName) {

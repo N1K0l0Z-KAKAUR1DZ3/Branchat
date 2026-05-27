@@ -1,7 +1,6 @@
 #include "../Headers/Base.h"
 #include "../../Services/Headers/Session.h"
-Base::Base(std::vector<Group>& _groups): groups(std::move(_groups)){}
-
+std::vector<Group> Base::groups;
 void Base::PrintData() {
     std::cout << "\n\n=====================================================\n";
     for (auto& group : groups) {
@@ -12,7 +11,7 @@ void Base::PrintData() {
 void Base::AddGroup(const std::string &name) {
     groups.push_back(Session::AddGroup(name));
 }
-Group& Base::FindGroup(const int targetId) {
+ Group& Base::FindGroup(const int targetId) {
     auto iterator = std::find_if(groups.begin(), groups.end(), [targetId](Group& g) {
         return g.id == targetId;
     });

@@ -5,10 +5,10 @@ void Chat::PrintData() const {
     PrintConversation();
 }
 void Chat::SendPrompt(const std::string& prompt) {
-    const auto promptMsg = Message(rootId, id, "User", prompt);
-    messages.push_back(promptMsg);
-    const auto responseMsg = Session::ReceiveAIResponse();
-    messages.push_back(responseMsg);
+    messages.push_back(Message(rootId, id, "user", prompt));
+    Session::SaveMessage(messages.back());
+    messages.push_back(Message(rootId, id, "model", Session::ReceiveAIResponse()));
+    Session::SaveMessage(messages.back());
  }
 
 Chat::~Chat() {
@@ -21,12 +21,15 @@ void Chat::CreateBranch(const std::string &newChatName) {
 }
 void Chat::FocusChat() {
     Session::pointingAtRoot = false;
-    Session::chatPtr = this;
+    Session::activeChatId = id;
+    Session::activeGroupId = groupId;
+    Session::rehookChatPtr();
     Session::currentContextPtr = &messages;
-    if (!Session::ChatTree.branchingChats.contains(parentId)) {
-        Session::additionalContextPtr = &Session::ChatTree.rootPtr->messages;
+    if (!Tree::branchingChats.contains(parentId)) {
+        Session::additionalContextPtr = &Tree::rootPtr->messages;
+        return;
     }
-    Session::additionalContextPtr = &Session::ChatTree.branchingChats[parentId].messages;
+    Session::additionalContextPtr = &Tree::branchingChats[parentId].messages;
 }
 void Chat::Delete() {
     Session::DeleteChat(id);

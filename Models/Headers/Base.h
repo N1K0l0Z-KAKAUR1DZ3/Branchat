@@ -4,13 +4,12 @@
 #ifndef BRANCHAT1_BASE_H
 #define BRANCHAT1_BASE_H
 struct Base {
-    std::vector<Group> groups;
-    explicit Base(std::vector<Group>& _groups);
-    void PrintData();
+    static std::vector<Group> groups;
     Base() = default;
-    Group& FindGroup(int targetId);
-    void AddGroup(const std::string& name);
-    void DeleteGroup(int id);
+    static void PrintData();
+    static Group& FindGroup(int targetId);
+    static void AddGroup(const std::string& name);
+    static void DeleteGroup(int id);
 };
 
 #endif //BRANCHAT1_BASE_H

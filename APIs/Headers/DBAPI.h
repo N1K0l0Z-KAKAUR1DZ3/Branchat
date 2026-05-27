@@ -21,7 +21,7 @@ class DBAPI {
 public:
     static void init();
     // read
-    static Base GetBase();
+    static std::vector<Group> GetBaseGroups();
     static std::unordered_map<int, Chat> GetChatTree(int rootId);
     // create
     static Group SaveGroup(const std::string& name);

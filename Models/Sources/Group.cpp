@@ -12,7 +12,7 @@ void Group::AddRoot(const std::string &Name) {
 }
 void Group::Delete() const {
     Session::DeleteGroup(id);
-    Session::base.DeleteGroup(id);
+    Base::DeleteGroup(id);
     Session::ReloadBase();
 }
 void Group::Rename(const std::string &newName) {

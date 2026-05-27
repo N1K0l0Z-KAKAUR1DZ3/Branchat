@@ -3,44 +3,63 @@
 
 Session::Session() {
     DBAPI::init();
-    base = DBAPI::GetBase();
+    AIAPI::init();
+    Base::groups = DBAPI::GetBaseGroups();
 }
+
+void Session::rehookChatPtr() {
+    RootChat* ptr = Tree::FindChatById(activeChatId);
+    if (ptr == nullptr) {
+        chatPtr = &Base::FindGroup(activeGroupId).FindRootChat(activeChatId);
+        return;
+    }
+    chatPtr = ptr;
+}
+
 void Session::LoadTree(const int rootId) {
-    ChatTree.branchingChats = DBAPI::GetChatTree(rootId);
+    Tree::branchingChats = DBAPI::GetChatTree(rootId);
+
 }
 void Session::resetFocus() {
-    chatPtr = nullptr;
+    activeChatId = -1;
+    activeGroupId = -1;
     pointingAtRoot = false;
+    chatPtr = nullptr;
     currentContextPtr = nullptr;
     additionalContextPtr = nullptr;
 }
 
-Message Session::ReceiveAIResponse() {
+std::string Session::ReceiveAIResponse() {
     std::vector<Message> contextPayload;
     if (additionalContextPtr != nullptr) {
-        contextPayload.insert(contextPayload.begin(), additionalContextPtr->begin(), additionalContextPtr->end());
+        contextPayload.insert(contextPayload.end(), additionalContextPtr->begin(), additionalContextPtr->end());
     }
-    contextPayload.insert(contextPayload.begin(), currentContextPtr->begin(), currentContextPtr->end());
+    contextPayload.insert(contextPayload.end(), currentContextPtr->begin(), currentContextPtr->end());
+    // for (auto& msg : contextPayload) {
+    //     std::cout <<msg.Role<< ": " <<msg.Content << std::endl;
+    // }
     auto response = AIAPI::GetAIResponse(contextPayload);
     return response;
 }
 
 void Session::AddBranch(const int parentId, const int rootId,const int groupId, const std::string& name) {
     const auto newChat = DBAPI::SaveBranchingChat(name, parentId, rootId, groupId);
-    ChatTree.branchingChats.emplace(newChat.id, newChat);
-    ChatTree.branchingChats[newChat.id].FocusChat();
+    Tree::branchingChats.emplace(newChat.id, newChat);
+    Tree::branchingChats[newChat.id].FocusChat();
 }
 void Session::ReloadTree() {
+    Tree::branchingChats = DBAPI::GetChatTree(Tree::rootPtr->id);
     if (!pointingAtRoot) {
-        const auto currentChatId = chatPtr->id;
-        ChatTree.branchingChats = DBAPI::GetChatTree(ChatTree.rootPtr->id);
-        if (!ChatTree.branchingChats.contains(currentChatId)) {
-            chatPtr = nullptr;
+        if (!Tree::branchingChats.contains(activeChatId)) {
+            Session::resetFocus();
+            return;
         }
-        chatPtr = &ChatTree.branchingChats[currentChatId];
-        return;
+        Session::rehookChatPtr();
     }
-    ChatTree.branchingChats = DBAPI::GetChatTree(ChatTree.rootPtr->id);
+}
+-
+void Session::SaveMessage(const Message& msg) {
+    DBAPI::SaveMessage(msg);
 }
 
 RootChat Session::AddRoot(const int groupId, const std::string &name) {
@@ -51,7 +70,7 @@ Group Session::AddGroup(const std::string &name) {
 }
 
 void Session::ReloadBase() {
-    base = DBAPI::GetBase();
+    Base::groups = DBAPI::GetBaseGroups();
 }
 
 void Session::RenameChat(const int chatId, const std::string &newName) {
