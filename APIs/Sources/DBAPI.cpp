@@ -115,15 +115,9 @@ std::vector<Message> DBAPI::GetBaseMessages() {
 }
  std::unordered_map<int, Chat> DBAPI::GetChatTree (const int rootId) {
     // std::cout << "fetching Tree of root " << rootId << "\n";
-    const int treeChatCount = GetBranchCount(rootId);
-    if (treeChatCount == 0) {
-        std::cout << "tree with root " << rootId << " does not exist";
-        throw std::invalid_argument(std::format("tree with the root if of {} does not exist", rootId));
-    }
 
     std::unordered_map<int, Chat> chats;
     std::vector<Message> treeMessages = GetTreeMessages(rootId);
-    chats.reserve(treeChatCount - 1);
         nanodbc::statement stmt(*dbConnection);
         nanodbc::prepare(stmt, "{CALL Branchat.GetChatTree(?)}");
         stmt.bind(0, &rootId);
