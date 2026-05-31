@@ -69,16 +69,6 @@ std::vector<Message> DBAPI::GetBaseMessages() {
     // std::cout << std::format("Fetched messages", GroupId) << "\n";
     return std::vector<RootChat>(first, last);
 }
- int DBAPI::GetBranchCount(const int rootId) {
-    // std::cout << std::format("Fetching branch count of root {}", rootId) << "\n";
-        nanodbc::statement stmt(*dbConnection);
-        nanodbc::prepare(stmt, "{CALL Branchat.GetBranchCount(?)}");
-        stmt.bind(0, &rootId);
-        nanodbc::result result = nanodbc::execute(stmt);
-        result.next();
-        // std::cout << "fetched count" << "\n";
-        return result.get<int>("count");
-}
  std::vector<RootChat> DBAPI::GetRootS() {
     // std::cout << "fetching all roots" << std::endl;
     std::vector<RootChat> roots;
@@ -90,6 +80,9 @@ std::vector<Message> DBAPI::GetBaseMessages() {
         const auto rootId =  result.get<int>("id");
         auto msgs = ExtractChatMessages(baseMessages, rootId);
         auto newRoot = RootChat(result.get<std::string>("name"),msgs, rootId, result.get<int>("groupId"));
+        std::cout << "assigning has children flag" << std::endl;
+        newRoot.hasChildren = result.get<int>("branchCount") > 0;
+        std::cout << "assigned has children flag" << std::endl;
         roots.push_back(newRoot);
     }
     // std::cout << " fetched all roots" << std::endl;
@@ -139,12 +132,14 @@ std::vector<Message> DBAPI::GetBaseMessages() {
         while (result.next()) {
             const int chatId = result.get<int>("id");
             auto chatMessages = ExtractChatMessages(treeMessages, chatId);
+            std::vector<Chat> branches = {};
             chats.emplace(chatId, Chat(result.get<int>("parentId"),
                                                               result.get<std::string>("name"),
                                                                 chatMessages,
                                                              result.get<int>("rootId"),
                                                                 chatId,
-                                                                result.get<int>("groupId")));
+                                                                result.get<int>("groupId"),
+                                                                 branches));
         }
         // std::cout << "fetched Tree with chatcount = " << chats.size()<< "\n";
         return chats;
@@ -189,8 +184,9 @@ std::vector<Message> DBAPI::GetBaseMessages() {
     stmt.bind(4, &groupId);
     nanodbc::execute(stmt);
     std::vector<Message> msgs = {};
+   std::vector<Chat> children = {};
     // std::cout << "saved branching Chat" <<std::endl;
-    return Chat(parentId, name, msgs, rootId, newId, groupId);
+    return Chat(parentId, name, msgs, rootId, newId, groupId, children);
 }
   void DBAPI::SaveMessage(const Message& msg) {
     const std::string timeStr = formatSqlTimestamp(msg.Timestamp);
@@ -217,13 +213,13 @@ std::vector<Message> DBAPI::GetBaseMessages() {
     // std::cout << "updated Group name to: " << newName <<std::endl;
 }
   void DBAPI::UpdateChatName(const int chatId,  const std::string & newName) {
-    // std::cout << "updating chat name" <<std::endl;
+    std::cout << "updating chat name" <<std::endl;
     nanodbc::statement stmt(*dbConnection);
     nanodbc::prepare(stmt, "{CALL Branchat.UpdateChat(?, ?)}");
     stmt.bind(0, &chatId);
     stmt.bind(1, newName.c_str());
     nanodbc::execute(stmt);
-    // std::cout << "updated chat name to: " << newName <<std::endl;
+    std::cout << "updated chat name to: " << newName <<std::endl;
 }
 
   void DBAPI::DeleteChat(const int chatId) {

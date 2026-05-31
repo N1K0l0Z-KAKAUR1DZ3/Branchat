@@ -8,17 +8,18 @@
 #ifndef BRANCHAT1_DBAPI_H
 #define BRANCHAT1_DBAPI_H
 class DBAPI {
+public:
     inline static std::unique_ptr<nanodbc::connection> dbConnection;
+    static std::vector<Chat> ConvertMapToVector(const std::unordered_map<int, Chat>& flatMap);
 
     static std::chrono::system_clock::time_point parseSqlTimestamp(const std::string& timeStr);
     static std::string formatSqlTimestamp(const std::chrono::system_clock::time_point& timePoint);
     static std::vector<Message> GetTreeMessages(int RootId);
     static std::vector<Message> ExtractChatMessages(const std::vector<Message>& allMessages, int ChatId);
     static std::vector<RootChat> ExtractGroupRoots(const std::vector<RootChat>& allRoots, int GroupId);
-    static int GetBranchCount(int rootId);
     static std::vector<RootChat> GetRootS();
     static std::vector<Message> GetBaseMessages();
-public:
+// public:
     static void init();
     // read
     static std::vector<Group> GetBaseGroups();
