@@ -1,8 +1,8 @@
 #include "../Headers/Root_chat.h"
-#include "../../Services/Headers/Session.h"
+#include "../../Session/Session.h"
 
 void RootChat::PrintData() const {
-    std::cout << "\t"<< std::format("rootID: {}, name: {}", id, name)<< std::endl;
+    std::cout << "\t"<< std::format("rootID: {}, name: {}, has children: {}", id, name, hasChildren)<< std::endl;
     PrintConversation();
 }
 void RootChat::PrintConversation() const {
@@ -14,41 +14,36 @@ void RootChat::FocusChat() {
     Session::pointingAtRoot = true;
     Session::activeChatId = id;
     Session::activeGroupId = groupId;
-    Tree::rootPtr = this;
-    Session::additionalContextPtr = nullptr;
-    Session::currentContextPtr = &messages;
-    Session::rehookChatPtr();
-}
-RootChat::~RootChat() {
-    if (Session::chatPtr == this) {
-        Session::resetFocus();
-    }
-    if (Tree::rootPtr == this) {
-        Tree::Clear();
-    }
+    Session::chatPtr = this;
 }
 
 void RootChat::SendPrompt(const std::string& prompt) {
     messages.push_back(Message(id, id, "user", prompt));
-    Session::SaveMessage(messages.back());
+    DBAPI::SaveMessage(messages.back());
     messages.push_back(Message(id, id, "model", Session::ReceiveAIResponse()));
-    Session::SaveMessage(messages.back());
+    DBAPI::SaveMessage(messages.back());
 }
 
-void RootChat::CreateBranch(const std::string& newChatName) {
-    Session::AddBranch(id, id, groupId, newChatName);
+/*works*/void RootChat::CreateBranch(const std::string& newChatName) {
+    if (Tree::rootId != id) {
+        LoadTree();
+    }
+    Tree::topBranches.push_back(DBAPI::SaveBranchingChat(newChatName, id, id, groupId));
+    hasChildren = true;
+    Tree::topBranches.back().FocusChat();
 }
-void RootChat::LoadTree() {
-    Session::LoadTree(id);
-    Tree::rootPtr = this;
+/*works*/void RootChat::LoadTree() {
+    Tree::SetTree(DBAPI::GetChatTree(id));
+    Tree::rootId = id;
 }
-void RootChat::Delete() {
-    Session::DeleteChat(id);
-    Base::FindGroup(groupId).DeleteRootChat(id);
+/*works*/ void RootChat::Delete() {
+    DBAPI::DeleteChat(id);
     Session::ReloadBase();
 }
-void RootChat::Rename(const std::string &newName) {
-    Session::RenameChat(id, newName);
+
+/*works*/void RootChat::Rename(const std::string &newName) {
+    std::cout << "renaming chat" << std::endl;
+    DBAPI::UpdateChatName(id, newName);
     name = newName;
 }
 

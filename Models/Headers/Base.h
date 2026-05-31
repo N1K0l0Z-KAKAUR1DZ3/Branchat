@@ -7,9 +7,8 @@ struct Base {
     static std::vector<Group> groups;
     Base() = default;
     static void PrintData();
-    static Group& FindGroup(int targetId);
+    static Group* FindGroup(int targetId);
     static void AddGroup(const std::string& name);
-    static void DeleteGroup(int id);
 };
 
 #endif //BRANCHAT1_BASE_H

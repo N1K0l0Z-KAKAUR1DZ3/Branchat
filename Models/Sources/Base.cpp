@@ -1,5 +1,5 @@
 #include "../Headers/Base.h"
-#include "../../Services/Headers/Session.h"
+#include "../../Session/Session.h"
 std::vector<Group> Base::groups;
 void Base::PrintData() {
     std::cout << "\n\n=====================================================\n";
@@ -9,19 +9,13 @@ void Base::PrintData() {
     std::cout << "=====================================================\n\n";
 }
 void Base::AddGroup(const std::string &name) {
-    groups.push_back(Session::AddGroup(name));
+    groups.push_back(DBAPI::SaveGroup(name));
 }
- Group& Base::FindGroup(const int targetId) {
-    auto iterator = std::find_if(groups.begin(), groups.end(), [targetId](Group& g) {
-        return g.id == targetId;
-    });
-    if (iterator != groups.end()) {
-        return *iterator;
+ Group* Base::FindGroup(const int targetId) {
+    for (auto& group : groups) {
+        if (group.id == targetId) {
+            return &group;
+        }
     }
-    throw std::runtime_error("Error: Group with ID " + std::to_string(targetId) + " not found!");
-}
-void Base::DeleteGroup(int id) {
-    std::erase_if(groups, [id](const Group& element) {
-        return element.id == id;
-    });
+    return nullptr;
 }

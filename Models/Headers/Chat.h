@@ -7,11 +7,12 @@
 struct Chat : RootChat{
     int parentId;
     int rootId;
+    std::vector<Chat> branches;
     explicit Chat() = default;
-    ~Chat() override;
-    explicit Chat(const int _parentId, std::string _name, std::vector<Message>& _messages, const int _rootId, const int _id, const int _groupId) : RootChat(std::move(_name), _messages, _id, _groupId),
+    explicit Chat(const int _parentId, std::string _name, std::vector<Message>& _messages, const int _rootId, const int _id, const int _groupId, std::vector<Chat>& _branches) : RootChat(std::move(_name), _messages, _id, _groupId),
         parentId(_parentId),
-        rootId(_rootId){}
+        rootId(_rootId),
+        branches(std::move(_branches)){}
     void PrintData() const override;
     void SendPrompt(const std::string& prompt) override;
     void CreateBranch(const std::string &newChatName) override;

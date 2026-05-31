@@ -7,16 +7,16 @@
 struct RootChat {
     std::string name;
     std::vector<Message> messages;
+    bool hasChildren = false;
     int id;
     int groupId;
-
     explicit RootChat(std::string _name, std::vector<Message>& _messages , const int _id,const int _groupId) :
         name(std::move(_name)),
         messages(std::move(_messages)),
         id(_id),
         groupId(_groupId){}
     explicit RootChat() = default;
-    virtual ~RootChat();
+    virtual ~RootChat() = default;
 protected:
     void PrintConversation() const;
 public:
