@@ -15,11 +15,10 @@ public:
     static void StartRenderLoop();
 private:
     inline static GLFWwindow* window;
-    inline static std::function<void()> deferredAction;
-    enum class ModalOp { None, AddGroupRoot, RenameGroup, BranchRoot, RenameRoot, BranchChat, RenameChat };
-    inline static ModalOp currentModalOp;
-    inline static int modalTargetId;
-    inline static char modalInputBuffer[256];
+    inline static std::function<void(std::string)> Action = nullptr;
+    inline static bool pendingAction;
+    inline static char modalInputBuffer[1024];
+    inline static char chatInputBuffer[1024];
     inline static bool triggerModal = false;
     inline static int forceOpenGroupId = -1;
     inline static int forceOpenRootId = -1;
