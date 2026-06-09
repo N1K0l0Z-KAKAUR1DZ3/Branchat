@@ -26,7 +26,7 @@ bool GUI::Initialize(int windowWidth, int windowHeight, const std::string& windo
     glfwSwapInterval(1); // Enable vsync
 
     // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
+    // IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
@@ -47,11 +47,8 @@ void GUI::StartRenderLoop() {
         BeginFrame();
 
         RenderMainApp();
-        RenderModals(); // Draw active popups on top
-
+        RenderModals();
         EndFrame();
-
-        // Safety Net: Execute structural changes outside the render loop!
         ExecuteDeferredActions();
     }
 }
@@ -79,7 +76,46 @@ void GUI::RenderMainApp() {
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->Pos);
     ImGui::SetNextWindowSize(ImGui::GetMainViewport()->Size);
     ImGui::Begin("Branchat", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
+    // ========================================================
+    // GLOBAL ERROR OVERLAY (Pin this to the very top)
+    // ========================================================
+    {
+        // Use a lock to safely check the static global string from the UI thread
+        std::lock_guard<std::mutex> lock(Session::globalErrorMutex);
+        if (!Session::globalErrorMessage.empty()) {
 
+            // 1. Styling
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.6f, 0.1f, 0.1f, 0.9f));
+
+            // 2. Create the child window
+            ImGui::BeginChild("ErrorOverlay", ImVec2(0, 50), true);
+
+            // 3. Define layout constants
+            const float buttonWidth = 80.0f;
+            const float padding = 10.0f;
+            const float availableWidth = ImGui::GetWindowWidth();
+
+            // 4. Render the Button first (Right-aligned)
+            ImGui::SameLine(availableWidth - buttonWidth - padding);
+            if (ImGui::Button("Dismiss", ImVec2(buttonWidth, 30))) {
+                Session::globalErrorMessage = "";
+            }
+
+            // 5. Render Text (constrained to the left of the button)
+            ImGui::SetCursorPos(ImVec2(padding, padding));
+
+            // Set the wrap limit so text doesn't flow behind the button
+            ImGui::PushTextWrapPos(availableWidth - buttonWidth - (padding * 2));
+            ImGui::TextUnformatted(("!!! ERROR: " + Session::globalErrorMessage).c_str());
+            ImGui::PopTextWrapPos();
+
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+
+            // 6. Add space after banner
+            ImGui::Spacing();
+        }
+    }
     if (ImGui::BeginTable("Splitter", 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
         ImGui::TableNextRow();
 
@@ -115,7 +151,6 @@ void GUI::RenderMainApp() {
                 if (ImGui::Selectable("Add Root")) {
                     forceOpenGroupId = group.id;
                     triggerModal = true;
-
                 }
                 if (ImGui::Selectable("Rename")) {
                     Action = [&group](const std::string& inputStr) { group.Rename(inputStr); };
@@ -123,6 +158,7 @@ void GUI::RenderMainApp() {
                 }
                 if (ImGui::Selectable("Delete")) {
                     Action = [&group](std::string ff) { group.Delete(); };
+                    pendingAction = true;
                 }
                 ImGui::EndPopup();
             }
@@ -131,25 +167,28 @@ void GUI::RenderMainApp() {
                 for (auto& root : group.roots) {
                     ImGui::PushID(root.id);
 
-                    // ACCORDION & SELECTION LOGIC
-                    // We force the node open if Tree::rootId matches this root
-                    ImGui::SetNextItemOpen(Tree::rootId == root.id, ImGuiCond_Always);
-
+                    // ==========================================
+                    // FIXED: ACCORDION & SELECTION LOGIC
+                    // ==========================================
                     bool isSelected = (Tree::rootId == root.id);
 
-                    ImGuiTreeNodeFlags rootFlags = (isSelected ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_OpenOnArrow;
+                    ImGuiTreeNodeFlags rootFlags = ImGuiTreeNodeFlags_OpenOnArrow;
+                    if (isSelected) rootFlags |= ImGuiTreeNodeFlags_Selected;
                     if (!root.hasChildren) rootFlags |= ImGuiTreeNodeFlags_Leaf;
 
+                    // 3. Render Node
                     std::string rootLabel = root.name + "###" + std::to_string(root.id);
                     bool rootOpen = ImGui::TreeNodeEx(rootLabel.c_str(), rootFlags);
 
-                    // Handle Focus
-                    if (ImGui::IsItemClicked()) {
-                         root.FocusChat();
+                    // 4. Handle Interaction
+                    if (ImGui::IsItemToggledOpen()) {
+                        if (rootOpen && root.hasChildren && !isSelected) {
+                            root.LoadTree();
+                        }
                     }
-                    // Handle Load
-                    else if (rootOpen && root.hasChildren &&  Tree::rootId != root.id) {
-                        root.LoadTree();
+                    else if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                        // Only here do we set the selection
+                        root.FocusChat();
                     }
 
                     // HOVER LOGIC: ROOT CHAT
@@ -172,6 +211,7 @@ void GUI::RenderMainApp() {
                         }
                         if (ImGui::Selectable("Delete")) {
                             Action = [&root](const std::string& inputStr) { root.Delete(); };
+                            pendingAction = true;
                         }
                         ImGui::EndPopup();
                     }
@@ -198,78 +238,68 @@ void GUI::RenderMainApp() {
         ImGui::BeginChild("RightPanel", ImVec2(0, 0), false);
 
         if (Session::chatPtr != nullptr) {
-            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Active Chat: %s", Session::chatPtr->name.c_str());
-            ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Active Chat: %s", Session::chatPtr->name.c_str());
+    ImGui::Separator();
 
-            // 1. Message History (Top part)
-            // -GetFrameHeightWithSpacing() reserves space at the bottom for the input bar
-            ImGui::BeginChild("MessageScroll", ImVec2(0, -40), true);
+    // 1. Message History
+    ImGui::BeginChild("MessageScroll", ImVec2(0, -60), true);
+        float maxWrapWidth = ImGui::GetWindowWidth() * 0.75f;
 
-                // Set a maximum width for text bubbles (e.g., 75% of the panel width)
-                float maxWrapWidth = ImGui::GetWindowWidth() * 0.75f;
+        for (const auto& msg : Session::chatPtr->messages) {
+            ImVec2 textSize = ImGui::CalcTextSize(msg.Content.c_str(), NULL, false, maxWrapWidth);
 
-                for (const auto& msg : Session::chatPtr->messages) {
-                    // Calculate the size of the text ASSUMING it will be wrapped at maxWrapWidth
-                    ImVec2 textSize = ImGui::CalcTextSize(msg.Content.c_str(), NULL, false, maxWrapWidth);
-
-                    if (msg.Role == "user") {
-                        // --- USER (RIGHT ALIGN) ---
-                        // Calculate where to start drawing so the right edge hits the padding
-                        float startPosX = ImGui::GetWindowWidth() - textSize.x - 20;
-                        if (startPosX < 0) startPosX = 0; // Safety clamp
-
-                        ImGui::SetCursorPosX(startPosX);
-
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 1.0f, 1.0f));
-                        // Force wrap exactly at the edge of where the text size calculation ended
-                        ImGui::PushTextWrapPos(startPosX + maxWrapWidth);
-                        ImGui::Text("%s", msg.Content.c_str());
-                        ImGui::PopTextWrapPos();
-                        ImGui::PopStyleColor();
-
-                    } else {
-                        // --- MODEL (LEFT ALIGN) ---
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-                        // PushTextWrapPos(0.0f) automatically wraps at the right edge of the window
-                        ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + maxWrapWidth);
-                        ImGui::Text("%s", msg.Content.c_str());
-                        ImGui::PopTextWrapPos();
-                        ImGui::PopStyleColor();
-                    }
-                    ImGui::Separator();
-                }
-
-                // Auto-scroll to the bottom if a new message was added
-                if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
-                    ImGui::SetScrollHereY(1.0f);
-                }
-
-                ImGui::EndChild();
-
-            // 2. Input Bar (Bottom part)
-            ImGui::Separator();
-
-            // Set width to leave room for the button
-            ImGui::SetNextItemWidth(-ImGui::GetFrameHeightWithSpacing() * 4.0f);
-
-            bool enterPressed = ImGui::InputText("##ChatInput", chatInputBuffer, IM_ARRAYSIZE(chatInputBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
-
-            ImGui::SameLine();
-
-            if (ImGui::Button("Send", ImVec2(-1, 0)) || enterPressed) {
-                if (chatInputBuffer[0] != '\0') {
-                    // CALL YOUR SEND FUNCTION HERE
-                    Session::chatPtr->SendPrompt(std::string(chatInputBuffer));
-                    chatInputBuffer[0] = '\0';
-                }
+            if (msg.Role == "user") {
+                float startPosX = ImGui::GetWindowWidth() - textSize.x - 20;
+                ImGui::SetCursorPosX(std::max(startPosX, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 1.0f, 1.0f));
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
             }
-        }else {
-            ImGui::TextDisabled("Select a chat from the left panel to begin.");
+
+            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + maxWrapWidth);
+            ImGui::Text("%s", msg.Content.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::PopStyleColor();
+            ImGui::Separator();
         }
+
+        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+            ImGui::SetScrollHereY(1.0f);
+    ImGui::EndChild();
+
+    // 2. Status Indicator & Input Bar
+    ImGui::Separator();
+
+    // Show indicator if waiting
+    if (Session::chatPtr->waitingResponse) {
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "AI is responding...");
+    } else {
+        ImGui::Spacing(); // Maintain spacing
+    }
+
+    // Disable input while waiting for response
+    bool isWaiting = Session::chatPtr->waitingResponse;
+    if (isWaiting) ImGui::BeginDisabled();
+
+    ImGui::SetNextItemWidth(-ImGui::GetFrameHeightWithSpacing() * 4.0f);
+    bool enterPressed = ImGui::InputText("##ChatInput", chatInputBuffer, IM_ARRAYSIZE(chatInputBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+
+    ImGui::SameLine();
+    if (ImGui::Button("Send", ImVec2(-1, 0)) || enterPressed) {
+        if (chatInputBuffer[0] != '\0') {
+            Session::chatPtr->SendPrompt(std::string(chatInputBuffer));
+            chatInputBuffer[0] = '\0';
+        }
+    }
+
+    if (isWaiting) ImGui::EndDisabled();
+
+} else {
+    ImGui::TextDisabled("Select a chat from the left panel to begin.");
+}
         ImGui::EndChild();
         ImGui::EndTable();
     }
-    RenderModals();
     ImGui::End();
 }
 
@@ -317,7 +347,8 @@ void GUI::RenderTreeNodes(std::vector<Chat>& branches) {
                 Action = [&chat](const std::string& inputStr) {  chat.Rename(inputStr); };
             }
             if (ImGui::Selectable("Delete")) {
-                Action = [&chat](const std::string& inputStr) {  chat.Rename(inputStr); };
+                Action = [&chat](const std::string& inputStr) {  chat.Delete(); };
+                pendingAction = true;
             }
             ImGui::EndPopup();
         }
