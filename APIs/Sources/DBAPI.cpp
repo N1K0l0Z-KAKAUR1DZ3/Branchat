@@ -1,4 +1,5 @@
 #include "../Headers/DBAPI.h"
+#include "Session.h"
 #include <cstdlib>
 std::chrono::system_clock::time_point DBAPI::parseSqlTimestamp(const std::string& timeStr) {
     std::tm timeStruct = {};
@@ -80,9 +81,7 @@ std::vector<Message> DBAPI::GetBaseMessages() {
         const auto rootId =  result.get<int>("id");
         auto msgs = ExtractChatMessages(baseMessages, rootId);
         auto newRoot = RootChat(result.get<std::string>("name"),msgs, rootId, result.get<int>("groupId"));
-        std::cout << "assigning has children flag" << std::endl;
         newRoot.hasChildren = result.get<int>("branchCount") > 0;
-        std::cout << "assigned has children flag" << std::endl;
         roots.push_back(newRoot);
     }
     // std::cout << " fetched all roots" << std::endl;
@@ -115,15 +114,9 @@ std::vector<Message> DBAPI::GetBaseMessages() {
 }
  std::unordered_map<int, Chat> DBAPI::GetChatTree (const int rootId) {
     // std::cout << "fetching Tree of root " << rootId << "\n";
-    const int treeChatCount = GetBranchCount(rootId);
-    if (treeChatCount == 0) {
-        std::cout << "tree with root " << rootId << " does not exist";
-        throw std::invalid_argument(std::format("tree with the root if of {} does not exist", rootId));
-    }
 
     std::unordered_map<int, Chat> chats;
     std::vector<Message> treeMessages = GetTreeMessages(rootId);
-    chats.reserve(treeChatCount - 1);
         nanodbc::statement stmt(*dbConnection);
         nanodbc::prepare(stmt, "{CALL Branchat.GetChatTree(?)}");
         stmt.bind(0, &rootId);
@@ -145,96 +138,132 @@ std::vector<Message> DBAPI::GetBaseMessages() {
         return chats;
 }
 //
-  Group DBAPI::SaveGroup(const std::string& name) {
-    // std::cout << "saving group" <<std::endl;
-    int newId = -1;
-    nanodbc::statement stmt(*dbConnection);
-    nanodbc::prepare(stmt, "{? = CALL Branchat.SaveGroup(?)}");
-    stmt.bind(0, &newId, 1, nanodbc::statement::PARAM_RETURN);
-    stmt.bind(1, name.c_str());
-    nanodbc::execute(stmt);
-    // std::cout << "saved Group" <<std::endl;
-    std::vector<RootChat> newRoots = {};
-    return Group(newId, name, newRoots);
-}
-  RootChat DBAPI::SaveRootChat(int groupId, const std::string& name) {
-    // std::cout << "saving root chat" <<std::endl;
-    int newId = -1;
-    nanodbc::statement stmt(*dbConnection);
-    nanodbc::prepare(stmt, "{? = CALL Branchat.SaveChat(?, ?, ?, ?)}");
-    stmt.bind(0, &newId, 1, nanodbc::statement::PARAM_RETURN);
-    stmt.bind(1, name.c_str());
-    stmt.bind_null(2);
-    stmt.bind_null(3);
-    stmt.bind(4, &groupId);
-    nanodbc::execute(stmt);
-    std::vector<Message> msgs = {};
-    // std::cout << "saved root Chat" <<std::endl;
-    return RootChat(name, msgs, newId, groupId);
-}
-  Chat DBAPI::SaveBranchingChat(const std::string& name, const int parentId, const  int rootId, const int groupId) {
-    // std::cout << "saving branching chat" <<std::endl;
-    int newId = -1;
-    nanodbc::statement stmt(*dbConnection);
-    nanodbc::prepare(stmt, "{? = CALL Branchat.SaveChat(?, ?, ?, ?)}");
-    stmt.bind(0, &newId, 1, nanodbc::statement::PARAM_RETURN);
-    stmt.bind(1, name.c_str());
-    stmt.bind(2, &parentId);
-    stmt.bind(3, &rootId);
-    stmt.bind(4, &groupId);
-    nanodbc::execute(stmt);
-    std::vector<Message> msgs = {};
-   std::vector<Chat> children = {};
-    // std::cout << "saved branching Chat" <<std::endl;
-    return Chat(parentId, name, msgs, rootId, newId, groupId, children);
-}
-  void DBAPI::SaveMessage(const Message& msg) {
-    const std::string timeStr = formatSqlTimestamp(msg.Timestamp);
-    // std::cout << "Saving message" << std::endl;
-    nanodbc::statement stmt(*dbConnection);
-    nanodbc::prepare(stmt, "{CALL Branchat.SaveMessage(?, ?, ?, ?, ?)}");
-    stmt.bind(0, &msg.RootId);
-    stmt.bind(1, &msg.ChatID);
-    stmt.bind(2, msg.Role.c_str());
-    stmt.bind(4, timeStr.c_str());
-    std::wstring wideName(msg.Content.begin(), msg.Content.end());
-    stmt.bind(3, msg.Content.c_str());
-    nanodbc::execute(stmt);
-    // std::cout << "Saved message" << std::endl;
+ Group DBAPI::SaveGroup(const std::string& name) {
+    try {
+        int newId = -1;
+        nanodbc::statement stmt(*dbConnection);
+        nanodbc::prepare(stmt, "{? = CALL Branchat.SaveGroup(?)}");
+        stmt.bind(0, &newId, 1, nanodbc::statement::PARAM_RETURN);
+        stmt.bind(1, name.c_str());
+        nanodbc::execute(stmt);
+        std::vector<RootChat> roots= {};
+        return Group(newId, name, roots);
+    } catch (const std::exception& e) {
+        Session::SetError("DBAPI: Failed to save group.");
+        std::cerr << "[ERROR] SaveGroup: " << e.what() << std::endl;
+        throw;
+    }
 }
 
-  void DBAPI::UpdateGroupName(const int GroupId,  const std::string & newName) {
-    // std::cout << "updating group name" <<std::endl;
-    nanodbc::statement stmt(*dbConnection);
-    nanodbc::prepare(stmt, "{CALL Branchat.UpdateGroup(?, ?)}");
-    stmt.bind(0, &GroupId);
-    stmt.bind(1, newName.c_str());
-    nanodbc::execute(stmt);
-    // std::cout << "updated Group name to: " << newName <<std::endl;
-}
-  void DBAPI::UpdateChatName(const int chatId,  const std::string & newName) {
-    std::cout << "updating chat name" <<std::endl;
-    nanodbc::statement stmt(*dbConnection);
-    nanodbc::prepare(stmt, "{CALL Branchat.UpdateChat(?, ?)}");
-    stmt.bind(0, &chatId);
-    stmt.bind(1, newName.c_str());
-    nanodbc::execute(stmt);
-    std::cout << "updated chat name to: " << newName <<std::endl;
+RootChat DBAPI::SaveRootChat(int groupId, const std::string& name) {
+    try {
+        int newId = -1;
+        nanodbc::statement stmt(*dbConnection);
+        nanodbc::prepare(stmt, "{? = CALL Branchat.SaveChat(?, ?, ?, ?)}");
+        stmt.bind(0, &newId, 1, nanodbc::statement::PARAM_RETURN);
+        stmt.bind(1, name.c_str());
+        stmt.bind_null(2);
+        stmt.bind_null(3);
+        stmt.bind(4, &groupId);
+        nanodbc::execute(stmt);
+        std::vector<Message> msgs = {};
+        return RootChat(name, msgs, newId, groupId);
+    } catch (const std::exception& e) {
+        Session::SetError("DBAPI: Failed to save root chat.");
+        std::cerr << "[ERROR] SaveRootChat: " << e.what() << std::endl;
+        throw;
+    }
 }
 
-  void DBAPI::DeleteChat(const int chatId) {
-    // std::cout << "Deleting tree starting at id " << chatId << std::endl;
-    nanodbc::statement stmt(*dbConnection);
-    nanodbc::prepare(stmt, "{CALL Branchat.DeleteChatBranch(?)}");
-    stmt.bind(0, &chatId);
-    nanodbc::execute(stmt);
-    // std::cout << "Delete success" << std::endl;
+Chat DBAPI::SaveBranchingChat(const std::string& name, const int parentId, const int rootId, const int groupId) {
+    try {
+        int newId = -1;
+        nanodbc::statement stmt(*dbConnection);
+        nanodbc::prepare(stmt, "{? = CALL Branchat.SaveChat(?, ?, ?, ?)}");
+        stmt.bind(0, &newId, 1, nanodbc::statement::PARAM_RETURN);
+        stmt.bind(1, name.c_str());
+        stmt.bind(2, &parentId);
+        stmt.bind(3, &rootId);
+        stmt.bind(4, &groupId);
+        nanodbc::execute(stmt);
+        std::vector<Message> msgs = {};
+        std::vector<Chat> chats = {};
+        return Chat(parentId, name, msgs, rootId, newId, groupId, chats);
+    } catch (const std::exception& e) {
+        Session::SetError("DBAPI: Failed to save branch.");
+        std::cerr << "[ERROR] SaveBranchingChat: " << e.what() << std::endl;
+        throw;
+    }
 }
-  void DBAPI::DeleteGroup(const int groupId) {
-    // std::cout << "Deleting group with id " << groupId << std::endl;
-    nanodbc::statement stmt(*dbConnection);
-    nanodbc::prepare(stmt, "{CALL Branchat.DeleteGroup(?)}");
-    stmt.bind(0, &groupId);
-    nanodbc::execute(stmt);
-    // std::cout << "Delete success" << std::endl;
+
+void DBAPI::SaveMessage(const Message& msg) {
+    try {
+        const std::string timeStr = formatSqlTimestamp(msg.Timestamp);
+        nanodbc::statement stmt(*dbConnection);
+        nanodbc::prepare(stmt, "{CALL Branchat.SaveMessage(?, ?, ?, ?, ?)}");
+        stmt.bind(0, &msg.RootId);
+        stmt.bind(1, &msg.ChatID);
+        stmt.bind(2, msg.Role.c_str());
+        stmt.bind(3, msg.Content.c_str());
+        stmt.bind(4, timeStr.c_str());
+        nanodbc::execute(stmt);
+    } catch (const std::exception& e) {
+        Session::SetError("DBAPI: Failed to save message.");
+        std::cerr << "[ERROR] SaveMessage: " << e.what() << std::endl;
+        throw;
+    }
+}
+
+void DBAPI::UpdateGroupName(const int GroupId, const std::string & newName) {
+    try {
+        nanodbc::statement stmt(*dbConnection);
+        nanodbc::prepare(stmt, "{CALL Branchat.UpdateGroup(?, ?)}");
+        stmt.bind(0, &GroupId);
+        stmt.bind(1, newName.c_str());
+        nanodbc::execute(stmt);
+    } catch (const std::exception& e) {
+        Session::SetError("DBAPI: Failed to update group name.");
+        std::cerr << "[ERROR] UpdateGroupName: " << e.what() << std::endl;
+        throw;
+    }
+}
+
+void DBAPI::UpdateChatName(const int chatId, const std::string & newName) {
+    try {
+        nanodbc::statement stmt(*dbConnection);
+        nanodbc::prepare(stmt, "{CALL Branchat.UpdateChat(?, ?)}");
+        stmt.bind(0, &chatId);
+        stmt.bind(1, newName.c_str());
+        nanodbc::execute(stmt);
+    } catch (const std::exception& e) {
+        Session::SetError("DBAPI: Failed to update chat name.");
+        std::cerr << "[ERROR] UpdateChatName: " << e.what() << std::endl;
+        throw;
+    }
+}
+
+void DBAPI::DeleteChat(const int chatId) {
+    try {
+        nanodbc::statement stmt(*dbConnection);
+        nanodbc::prepare(stmt, "{CALL Branchat.DeleteChatBranch(?)}");
+        stmt.bind(0, &chatId);
+        nanodbc::execute(stmt);
+    } catch (const std::exception& e) {
+        Session::SetError("DBAPI: Failed to delete chat.");
+        std::cerr << "[ERROR] DeleteChat: " << e.what() << std::endl;
+        throw;
+    }
+}
+
+void DBAPI::DeleteGroup(const int groupId) {
+    try {
+        nanodbc::statement stmt(*dbConnection);
+        nanodbc::prepare(stmt, "{CALL Branchat.DeleteGroup(?)}");
+        stmt.bind(0, &groupId);
+        nanodbc::execute(stmt);
+    } catch (const std::exception& e) {
+        Session::SetError("DBAPI: Failed to delete group.");
+        std::cerr << "[ERROR] DeleteGroup: " << e.what() << std::endl;
+        throw;
+    }
 }

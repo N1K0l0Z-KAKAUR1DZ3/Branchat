@@ -13,6 +13,10 @@ public:
     inline static bool pointingAtRoot = false;
     inline static RootChat* chatPtr;
 
+    inline static std::string globalErrorMessage;
+    inline static std::mutex globalErrorMutex;
+
+    static void SetError(const std::string& err);
     Session();
     static void AttemptRehook();
     static void ReloadBase();

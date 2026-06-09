@@ -8,6 +8,7 @@ struct RootChat {
     std::string name;
     std::vector<Message> messages;
     bool hasChildren = false;
+    bool waitingResponse = false;
     int id;
     int groupId;
     explicit RootChat(std::string _name, std::vector<Message>& _messages , const int _id,const int _groupId) :
