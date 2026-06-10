@@ -2,7 +2,7 @@
 #include <curl/curl.h>
 
 void AIAPI::init() {
-    url = std::getenv("API_URL");
+    url = std::getenv("API_URL1");
     CURLcode globalRes = curl_global_init(CURL_GLOBAL_DEFAULT);
     if (globalRes != CURLE_OK) {
         throw std::runtime_error("CRITICAL: Failed to initialize libcurl globally: " + std::string(curl_easy_strerror(globalRes)));

@@ -1,9 +1,8 @@
 #pragma once
-#include "../Dependencies/imgui/imgui.h"
-#include "../Dependencies/imgui/imgui_impl_glfw.h"
-#include "../Dependencies/imgui/imgui_impl_opengl3.h"
+
 #include "../Session/Session.h"
 #include <GLFW/glfw3.h>
+#include "../Dependencies/imgui/imgui_markdown-main/imgui_markdown.h"
 
 #ifndef BRANCHAT1_GUI_H
 #define BRANCHAT1_GUI_H
@@ -14,6 +13,7 @@ public:
     static bool Initialize(int windowWidth, int windowHeight, const std::string& windowTitle);
     static void StartRenderLoop();
 private:
+    inline static ImGui::MarkdownConfig mdConfig;
     inline static GLFWwindow* window;
     inline static std::function<void(std::string)> Action = nullptr;
     inline static bool pendingAction;
@@ -29,6 +29,7 @@ private:
     static void RenderTreeNodes(std::vector<Chat>& branches);
     static void RenderModals();
     static void ExecuteDeferredActions();
+    static void InitializeMarkdown();
 };
 
 
