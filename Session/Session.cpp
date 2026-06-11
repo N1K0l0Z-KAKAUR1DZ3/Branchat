@@ -11,6 +11,7 @@ Session::Session() {
     DBAPI::init();
     AIAPI::init();
     Base::groups = DBAPI::GetBaseGroups();
+    contextLimit = 30;
     std::cout << "[SESSION] Session initialized. Loaded " << Base::groups.size() << " groups." << std::endl;
 }
 
@@ -81,6 +82,13 @@ std::string Session::ReceiveAIResponse() {
     }
 
     contextPayload.insert(contextPayload.end(), chatPtr->messages.begin(), chatPtr->messages.end());
+    if (contextPayload.size() > 10) {
+        if (contextPayload.size() > (contextLimit)) {
+            printf("history too long, trinning \n");
+            size_t countToRemove = contextPayload.size() - contextLimit;
+            contextPayload.erase(contextPayload.begin(), contextPayload.begin() + countToRemove);
+        }
+    }
     auto response = AIAPI::GetAIResponse(contextPayload);
 
     std::cout << "[SESSION] AI Response received. Length: " << response.length() << std::endl;

@@ -7,6 +7,7 @@
 class Session {
     static std::vector<Message>* FetchAdditionalContext();
 public:
+    inline static int contextLimit;
     inline static int activeChatId = -1;
     inline static int activeGroupId = -1;
 
