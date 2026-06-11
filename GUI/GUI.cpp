@@ -560,7 +560,7 @@ void GUI::RenderMainApp() {
     ImGui::PopStyleVar();
 
     ImGui::SameLine();
-    if (ImGui::Button("Send", ImVec2(-1, promptBarHeight)) || (ImGui::IsKeyPressed(ImGuiKey_Enter) && ImGui::GetIO().KeyCtrl)) {
+    if (ImGui::Button("Send", ImVec2(-1, promptBarHeight)) || ImGui::IsKeyPressed(ImGuiKey_Enter) ) {
         if (chatInputBuffer[0] != '\0') {
             Session::chatPtr->SendPrompt(std::string(chatInputBuffer));
             chatInputBuffer[0] = '\0';
