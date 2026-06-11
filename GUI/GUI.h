@@ -13,6 +13,10 @@ public:
     static bool Initialize(int windowWidth, int windowHeight, const std::string& windowTitle);
     static void StartRenderLoop();
 private:
+    inline static float footerHeight = 150.0f;
+    inline static ImFont* fancy;
+    inline static ImFont* roboto;
+    inline static ImFont* jbFont;
     inline static ImGui::MarkdownConfig mdConfig;
     inline static GLFWwindow* window;
     inline static std::function<void(std::string)> Action = nullptr;
@@ -30,6 +34,7 @@ private:
     static void RenderModals();
     static void ExecuteDeferredActions();
     static void InitializeMarkdown();
+    static void RenderMessageContent(const std::string& content, bool isUser);
 };
 
 
