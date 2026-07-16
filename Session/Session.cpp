@@ -54,19 +54,17 @@ std::vector<Message>* Session::FetchAdditionalContext() {
         std::cout << "[SESSION] FetchAdditionalContext skipped: Pointing at Root." << std::endl;
         return nullptr;
     }
+    if (chatPtr->messages.size() > contextLimit) {
+        std::cout << "[SESSION] FetchAdditionalContext skipped: Current chats contexts is above the limit" << std::endl;
+        return nullptr;
+    }
 
     auto tempChatPtr = static_cast<Chat*>(chatPtr);
     int parentId = tempChatPtr->parentId;
     std::cout << "[SESSION] Fetching context. ParentID: " << parentId << std::endl;
 
     if (Tree::FindChatById(Tree::topBranches, parentId) == nullptr) {
-        auto group = Base::FindGroup(activeGroupId);
-        if (group) {
-            auto root = group->FindRootChat(parentId);
-            if (root) return &root->messages;
-        }
-        std::cout << "[SESSION] Additional context source not found." << std::endl;
-        return nullptr;
+        return &Base::FindGroup(activeGroupId)->FindRootChat(parentId)->messages;
     }
     return &Tree::FindChatById(Tree::topBranches, parentId)->messages;
 }
@@ -82,13 +80,20 @@ std::string Session::ReceiveAIResponse() {
     }
 
     contextPayload.insert(contextPayload.end(), chatPtr->messages.begin(), chatPtr->messages.end());
-    if (contextPayload.size() > 10) {
+    if (contextPayload.size() > contextLimit) {
         if (contextPayload.size() > (contextLimit)) {
-            printf("history too long, trinning \n");
+            printf("history too long, trimming \n");
             size_t countToRemove = contextPayload.size() - contextLimit;
             contextPayload.erase(contextPayload.begin(), contextPayload.begin() + countToRemove);
         }
     }
+
+
+    std::cout << "number of messages in AI/user history : " << contextPayload.size() << std::endl;
+    // for (auto x : contextPayload) {
+    //     x.Print();
+    //     std::cout <<"\n\n\n\n";
+    // }
     auto response = AIAPI::GetAIResponse(contextPayload);
 
     std::cout << "[SESSION] AI Response received. Length: " << response.length() << std::endl;
