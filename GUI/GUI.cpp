@@ -164,9 +164,9 @@ bool GUI::Initialize(int windowWidth, int windowHeight, const std::string &windo
     ImFontConfig fontConfig;
     fontConfig.OversampleH = 3;
     fontConfig.OversampleV = 3;
-    GUI::fancy = io.Fonts->AddFontFromFileTTF("Assets/PlayfairDisplay-VariableFont_wght.ttf", 20.0f, &fontConfig);
-    GUI::jbFont = io.Fonts->AddFontFromFileTTF("Assets/JetBrainsMono-ExtraLight.ttf", 20.0f, &fontConfig);
-    GUI::roboto = io.Fonts->AddFontFromFileTTF("Assets/Roboto-VariableFont_wdth,wght.ttf", 20.0f, &fontConfig);
+    GUI::fancy = io.Fonts->AddFontFromFileTTF("/home/nika/test/Branchat1/Assets/PlayfairDisplay-VariableFont_wght.ttf", 20.0f, &fontConfig);
+    GUI::jbFont = io.Fonts->AddFontFromFileTTF("/home/nika/test/Branchat1/Assets/JetBrainsMono-ExtraLight.ttf", 20.0f, &fontConfig);
+    GUI::roboto = io.Fonts->AddFontFromFileTTF("/home/nika/test/Branchat1/Assets/Roboto-VariableFont_wdth,wght.ttf", 20.0f, &fontConfig);
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
     // Setup Platform/Renderer backends
