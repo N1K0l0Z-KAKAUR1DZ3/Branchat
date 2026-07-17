@@ -14,6 +14,7 @@ public:
     static void StartRenderLoop();
 private:
     inline static float footerHeight = 150.0f;
+    inline static int contexLimitBuffer;
     inline static ImFont* fancy;
     inline static ImFont* roboto;
     inline static ImFont* jbFont;

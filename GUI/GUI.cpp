@@ -261,7 +261,7 @@ void GUI::RenderMainApp() {
 
             // Set the wrap limit so text doesn't flow behind the button
             ImGui::PushTextWrapPos(availableWidth - buttonWidth - (padding * 2));
-            ImGui::TextUnformatted(("!!! ERROR: " + Session::globalErrorMessage).c_str());
+            ImGui::TextUnformatted((Session::globalErrorMessage).c_str());
             ImGui::PopTextWrapPos();
 
             ImGui::EndChild();
@@ -287,6 +287,53 @@ void GUI::RenderMainApp() {
         if (ImGui::Button("+ Add Group", ImVec2(-1, 30))) {
             Action = [](const std::string &inputStr) { Base::AddGroup(inputStr); };
             triggerModal = true;
+        }
+        ImGui::Spacing(); // Adds a small visual gap
+
+        // 2. Create the dynamic button label
+        // This ensures the button always displays the current active limit
+        std::string contextLabel = "Context Limit: " + std::to_string(Session::contextLimit);
+
+        // 3. Draw the Context Limit button
+        // ImVec2(ImGui::GetContentRegionAvail().x, 0) makes it span the full width of the side panel
+        if (ImGui::Button(contextLabel.c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+            // Tell ImGui to prepare the popup dialog
+            ImGui::OpenPopup("Edit Context Limit");
+        }
+
+        // 4. Define the Popup Modal logic
+        // ImGuiWindowFlags_AlwaysAutoResize ensures the popup shrinks to fit the input field perfectly
+        if (ImGui::BeginPopupModal("Edit Context Limit", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+
+            ImGui::Spacing();
+
+            // Input field to modify the variable
+            ImGui::InputInt("##LimitInput", &contexLimitBuffer);
+
+            ImGui::Spacing();
+
+            // 5. Provide Save/Cancel buttons
+            if (ImGui::Button("Save", ImVec2(120, 0))) {
+
+                // Check if the input is outside the [1; 60] range
+                if (contexLimitBuffer < 1 || contexLimitBuffer > 60) {
+                    std::lock_guard<std::mutex> lock(Session::globalErrorMutex);
+                    Session::globalErrorMessage = "Context limit out of range [1 ; 60]";
+                    ImGui::CloseCurrentPopup();
+                } else {
+                    Session::contextLimit = contexLimitBuffer;
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+
+            ImGui::SameLine(0.0f, 20.0f);
+
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+
+            // Must be called to end the popup block
+            ImGui::EndPopup();
         }
 
         ImGui::Spacing();
