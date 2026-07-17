@@ -584,7 +584,14 @@ void GUI::RenderMainApp() {
         ImGui::Spacing();
         ImGui::PopID();
     }
-    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) ImGui::SetScrollHereY(1.0f);
+         if (scrollBottom) {
+             ImGui::SetScrollHereY(0.0f);
+             scrollBottom = false;
+         }
+         if (scrollDown) {
+             ImGui::SetScrollY(ImGui::GetScrollY() + 220.0f);
+             scrollDown = false;
+         }
     ImGui::EndChild();
 
     // 3. PROMPT BAR (Static Height)
@@ -611,6 +618,7 @@ void GUI::RenderMainApp() {
         if (chatInputBuffer[0] != '\0') {
             Session::chatPtr->SendPrompt(std::string(chatInputBuffer));
             chatInputBuffer[0] = '\0';
+            scrollBottom = true;
         }
     }
     if (isWaiting) ImGui::EndDisabled();

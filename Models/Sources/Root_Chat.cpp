@@ -3,6 +3,8 @@
 #include <iostream>
 #include <thread>
 
+#include "../../GUI/GUI.h"
+
 void RootChat::PrintData() const {
     std::cout << "\t" << std::format("rootID: {}, name: {}, has children: {}", id, name, hasChildren) << std::endl;
     PrintConversation();
@@ -35,6 +37,7 @@ void RootChat::SendPrompt(const std::string& prompt) {
                 std::string response = Session::ReceiveAIResponse();
                 messages.push_back(Message(id, id, "model", response));
                 DBAPI::SaveMessage(messages.back());
+                GUI::scrollDown = true;
             } catch (const std::exception& e) {
                 Session::SetError(std::string("AI Thread Error: ") + e.what());
                 std::cerr << "[ERROR] AI Thread: " << e.what() << std::endl;

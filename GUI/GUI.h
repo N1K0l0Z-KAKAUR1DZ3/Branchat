@@ -12,6 +12,8 @@ class GUI {
 public:
     static bool Initialize(int windowWidth, int windowHeight, const std::string& windowTitle);
     static void StartRenderLoop();
+    inline static bool scrollBottom = false;
+    inline static bool scrollDown = false;
 private:
     inline static float footerHeight = 150.0f;
     inline static int contexLimitBuffer;

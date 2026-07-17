@@ -88,12 +88,6 @@ std::string Session::ReceiveAIResponse() {
         }
     }
 
-
-    std::cout << "number of messages in AI/user history : " << contextPayload.size() << std::endl;
-    // for (auto x : contextPayload) {
-    //     x.Print();
-    //     std::cout <<"\n\n\n\n";
-    // }
     auto response = AIAPI::GetAIResponse(contextPayload);
 
     std::cout << "[SESSION] AI Response received. Length: " << response.length() << std::endl;
