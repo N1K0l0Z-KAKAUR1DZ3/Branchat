@@ -781,9 +781,16 @@ void GUI::RenderMainApp() {
         ImGui::Dummy(ImVec2(0.0f, 10.0f)); // breathing room between turns
         ImGui::PopID();
     }
+         // Hold the scroll-to-bottom for a few frames: the per-message cards use
+         // auto-sized heights that aren't known until a frame after they appear,
+         // so a single-frame scroll lands short on the first click.
          if (scrollBottom) {
-             ImGui::SetScrollHereY(0.0f);
+             scrollBottomTicks = 3;
              scrollBottom = false;
+         }
+         if (scrollBottomTicks > 0) {
+             ImGui::SetScrollY(ImGui::GetScrollMaxY());
+             scrollBottomTicks--;
          }
          if (scrollDown) {
              ImGui::SetScrollY(ImGui::GetScrollY() + 220.0f);

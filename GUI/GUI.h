@@ -13,6 +13,7 @@ public:
     static bool Initialize(int windowWidth, int windowHeight, const std::string& windowTitle);
     static void StartRenderLoop();
     inline static bool scrollBottom = false;
+    inline static int scrollBottomTicks = 0; // frames left to keep pinning to the bottom
     inline static bool scrollDown = false;
     inline static int lastRenderedChatId = -1; // detects when the active chat changes
 private:
