@@ -14,6 +14,7 @@ public:
     static void StartRenderLoop();
     inline static bool scrollBottom = false;
     inline static bool scrollDown = false;
+    inline static int lastRenderedChatId = -1; // detects when the active chat changes
 private:
     inline static float footerHeight = 150.0f;
     inline static int contexLimitBuffer;

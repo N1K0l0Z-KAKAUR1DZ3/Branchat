@@ -658,6 +658,11 @@ void GUI::RenderMainApp() {
         ImGui::BeginChild("RightPanel", ImVec2(0, 0), false);
 
      if (Session::chatPtr != nullptr) {
+    // When the active chat changes, jump to the latest message
+    if (lastRenderedChatId != Session::activeChatId) {
+        lastRenderedChatId = Session::activeChatId;
+        scrollBottom = true;
+    }
     // 1. HEADER
     ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Active Chat: %s", Session::chatPtr->name.c_str());
     ImGui::Separator();
