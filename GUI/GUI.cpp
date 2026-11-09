@@ -90,6 +90,10 @@ namespace {
     ImU32 HoverPillColor(bool dark) { return dark ? IM_COL32(255, 255, 255, 15) : IM_COL32(0, 0, 0, 20); }
     ImU32 SelectPillColor(bool dark) { return dark ? IM_COL32(255, 255, 255, 30) : IM_COL32(0, 0, 0, 40); }
     ImVec4 UserTextColor(bool dark) { return dark ? ImVec4(0.2f, 0.8f, 1.0f, 1.0f) : ImVec4(0.0f, 0.35f, 0.75f, 1.0f); }
+    // Muted label color for the "You" / "Assistant" role labels.
+    ImVec4 MutedTextColor(bool dark) { return dark ? ImVec4(0.55f, 0.57f, 0.62f, 1.0f) : ImVec4(0.42f, 0.44f, 0.48f, 1.0f); }
+    // Subtle background behind a user turn's card.
+    ImVec4 CardColor(bool dark) { return dark ? ImVec4(0.17f, 0.18f, 0.21f, 1.0f) : ImVec4(0.93f, 0.94f, 0.96f, 1.0f); }
 }
 
 // Applies a full style preset (dark or light) plus Branchat's rounding and accents.
@@ -661,7 +665,11 @@ void GUI::RenderMainApp() {
     // --- [MODIFIED]: DYNAMIC LAYOUT CALCULATION ---
     float sendButtonWidth = ImGui::GetFrameHeightWithSpacing() * 1.5f;
     float attachButtonWidth = ImGui::CalcTextSize("Attach").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    float inputAreaWidth = ImGui::GetContentRegionAvail().x - sendButtonWidth - attachButtonWidth
+    // Keep the composer to the same centered column width as the conversation
+    float composerFull = ImGui::GetContentRegionAvail().x;
+    float composerW = std::min(composerFull, 720.0f);
+    float composerMargin = std::max((composerFull - composerW) * 0.5f, 0.0f);
+    float inputAreaWidth = composerW - sendButtonWidth - attachButtonWidth
                            - ImGui::GetStyle().ItemSpacing.x * 2.0f;
 
     // Calculate prompt bar height
@@ -676,64 +684,65 @@ void GUI::RenderMainApp() {
 
     // 2. MESSAGE HISTORY (Yields space to the footer)
     ImGui::BeginChild("MessageScroll", ImVec2(0, -totalFooterHeight), true);
-    float maxWrapWidth = ImGui::GetWindowWidth() * 0.75f;
+    // Centered, readable conversation column (assistant-style layout)
+    const float convFull = ImGui::GetContentRegionAvail().x;
+    const float convColW = std::min(convFull, 720.0f);
+    const float convBaseX = ImGui::GetCursorPosX();
+    const float convColLeftX = convBaseX + std::max((convFull - convColW) * 0.5f, 0.0f);
 
     for (const auto &msg: Session::chatPtr->messages) {
         ImGui::PushID(&msg);
-        ImVec2 rowStartScreenPos = ImGui::GetCursorScreenPos();
-        float availWidth = ImGui::GetContentRegionAvail().x;
-        float screenStartX = rowStartScreenPos.x;
-
-        bool isUser = (msg.Role == "user");
-        if (!msg.Attachments.empty()) {
-            RenderMessageAttachments(msg.Attachments, isUser);
-        }
-
+        const bool isUser = (msg.Role == "user");
         const bool hasText = !msg.Content.empty();
-        if (hasText) {
-            if (isUser) {
-                ImVec2 tSize = ImGui::CalcTextSize(msg.Content.c_str(), NULL, false, maxWrapWidth);
-                float textLocalStartX = availWidth - tSize.x - ImGui::GetStyle().ItemSpacing.x;
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(textLocalStartX, 0.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, UserTextColor(darkTheme));
-            } else {
-                // Model text uses the theme's default text color so it stays readable in light mode
-                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_Text));
-                ImGui::PushFont(GUI::roboto);
-            }
 
+        // Each turn is a fixed-width, auto-height card: user turns get a subtle
+        // background, assistant turns are plain. Fixed width keeps lines readable.
+        ImGui::SetCursorPosX(convColLeftX);
+        if (isUser) ImGui::PushStyleColor(ImGuiCol_ChildBg, CardColor(darkTheme));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 12.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 12.0f));
+        ImGui::BeginChild("##turn", ImVec2(convColW, 0.0f),
+                          ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding);
+
+        // Role label
+        ImGui::PushFont(roboto);
+        ImGui::PushStyleColor(ImGuiCol_Text, isUser ? UserTextColor(darkTheme) : MutedTextColor(darkTheme));
+        ImGui::TextUnformatted(isUser ? "You" : "Assistant");
+        ImGui::PopStyleColor();
+        ImGui::PopFont();
+        ImGui::Spacing();
+
+        if (!msg.Attachments.empty()) RenderMessageAttachments(msg.Attachments, false);
+
+        if (hasText) {
+            if (!isUser) ImGui::PushFont(roboto);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_Text));
             RenderMessageContent(msg.Content, isUser);
-            if (!isUser) ImGui::PopFont();
             ImGui::PopStyleColor();
+            if (!isUser) ImGui::PopFont();
         }
 
-        float footerH = 30.0f;
-        ImVec2 fStart = ImGui::GetCursorScreenPos();
-        ImVec2 fEnd = ImVec2(screenStartX + availWidth, fStart.y + footerH);
-        bool rHovered = ImGui::IsMouseHoveringRect(rowStartScreenPos, fEnd);
+        ImGui::EndChild();
+        ImGui::PopStyleVar(2);
+        if (isUser) ImGui::PopStyleColor();
 
-        // Hover action bar: Copy / Edit / Delete, only shown while the row is hovered
+        const ImVec2 turnMin = ImGui::GetItemRectMin();
+        const ImVec2 turnMax = ImGui::GetItemRectMax();
+
+        // Hover action bar under the message (Copy / Edit / Delete), left-aligned.
+        // A reserved strip keeps the layout from jumping when it appears.
+        const float actionsH = 28.0f;
+        const ImVec2 actionsPos = ImGui::GetCursorScreenPos();
+        const bool rHovered = ImGui::IsMouseHoveringRect(turnMin, ImVec2(turnMax.x, actionsPos.y + actionsH));
         if (rHovered) {
-            ImVec2 btnPadding = ImVec2(12.0f, 4.0f);
-            float btnH = ImGui::CalcTextSize("Copy").y + btnPadding.y * 2.0f;
-            float vOffset = (footerH - btnH) / 2.0f;
-
             const bool canCopy = hasText;
             const bool canEdit = hasText && msg.Id > 0; // only saved messages can be edited
             const bool canDelete = msg.Id > 0;
-            auto bw = [&](const char *l) { return ImGui::CalcTextSize(l).x + btnPadding.x * 2.0f; };
-            const float gap = 6.0f;
-            float totalW = 0.0f;
-            if (canCopy) totalW += bw("Copy");
-            if (canEdit) totalW += (totalW > 0 ? gap : 0) + bw("Edit");
-            if (canDelete) totalW += (totalW > 0 ? gap : 0) + bw("Delete");
-
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, btnPadding);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 3.0f));
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-            float startX = isUser ? (screenStartX + availWidth - totalW - 10.0f) : (screenStartX + 10.0f);
-            ImGui::SetCursorScreenPos(ImVec2(startX, fStart.y + vOffset));
+            ImGui::SetCursorScreenPos(ImVec2(turnMin.x, actionsPos.y));
             bool firstBtn = true;
-            auto sl = [&] { if (!firstBtn) ImGui::SameLine(0.0f, gap); firstBtn = false; };
+            auto sl = [&] { if (!firstBtn) ImGui::SameLine(0.0f, 6.0f); firstBtn = false; };
             if (canCopy) { sl(); if (ImGui::Button("Copy")) ImGui::SetClipboardText(msg.Content.c_str()); }
             if (canEdit) {
                 sl();
@@ -760,10 +769,11 @@ void GUI::RenderMainApp() {
                 }
             }
             ImGui::PopStyleVar(2);
+        } else {
+            ImGui::Dummy(ImVec2(1.0f, actionsH));
         }
-        ImGui::SetCursorScreenPos(ImVec2(screenStartX, fStart.y + footerH));
-        ImGui::Separator();
-        ImGui::Spacing();
+
+        ImGui::Dummy(ImVec2(0.0f, 10.0f)); // breathing room between turns
         ImGui::PopID();
     }
          if (scrollBottom) {
@@ -788,10 +798,12 @@ void GUI::RenderMainApp() {
     bool isWaiting = Session::chatPtr->waitingResponse;
     if (isWaiting) ImGui::BeginDisabled();
 
-    // Images waiting to be sent with the next message
+    // Images waiting to be sent with the next message (centered to the column)
+    if (composerMargin > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + composerMargin);
     RenderPendingAttachments();
 
     // [MODIFIED]: WordWrap + Multiline, height based on calculated promptBarHeight
+    if (composerMargin > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + composerMargin);
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.0f);
     ImGui::InputTextMultiline("##ChatInput", chatInputBuffer, IM_ARRAYSIZE(chatInputBuffer),
                               ImVec2(inputAreaWidth, promptBarHeight),
@@ -813,7 +825,7 @@ void GUI::RenderMainApp() {
     const bool popupOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
 
     ImGui::SameLine();
-    bool sendPressed = ImGui::Button("Send", ImVec2(-1, promptBarHeight));
+    bool sendPressed = ImGui::Button("Send", ImVec2(sendButtonWidth, promptBarHeight));
     sendPressed |= !popupOpen && ImGui::IsKeyPressed(ImGuiKey_Enter);
     if (sendPressed && !isWaiting && (chatInputBuffer[0] != '\0' || !pendingAttachments.empty())) {
         const size_t countBefore = Session::chatPtr->messages.size();
