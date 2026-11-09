@@ -140,7 +140,11 @@ std::vector<RootChat> DBAPI::GetRootS() {
 
 void DBAPI::init() {
     std::cout << "Connecting to Branchat " << std::endl;
-    std::string constring = std::getenv("CON_STRING");
+    const char* envCon = std::getenv("CON_STRING");
+    if (envCon == nullptr || envCon[0] == '\0') {
+        throw std::runtime_error("CON_STRING is not set. Set it to your SQL Server ODBC connection string before starting the app.");
+    }
+    std::string constring = envCon;
     dbConnection = std::make_unique<nanodbc::connection>(constring);
     if (!dbConnection->connected()) {
         throw std::runtime_error("Connection object created but not connected.");
@@ -333,6 +337,33 @@ void DBAPI::UpdateChatName(const int chatId, const std::string& newName) {
     } catch (const std::exception& e) {
         Session::SetError("DBAPI: Failed to update chat Name.");
         std::cerr << "[ERROR] UpdateChatName: " << e.what() << std::endl;
+        throw;
+    }
+}
+
+void DBAPI::UpdateMessageText(const int messageId, const std::string& newText) {
+    try {
+        nanodbc::statement stmt(*dbConnection);
+        nanodbc::prepare(stmt, "{CALL Branchat.UpdateMessage(?, ?)}");
+        stmt.bind(0, &messageId);
+        stmt.bind(1, newText.c_str());
+        nanodbc::execute(stmt);
+    } catch (const std::exception& e) {
+        Session::SetError("DBAPI: Failed to update message.");
+        std::cerr << "[ERROR] UpdateMessageText: " << e.what() << std::endl;
+        throw;
+    }
+}
+
+void DBAPI::DeleteMessage(const int messageId) {
+    try {
+        nanodbc::statement stmt(*dbConnection);
+        nanodbc::prepare(stmt, "{CALL Branchat.DeleteMessage(?)}");
+        stmt.bind(0, &messageId);
+        nanodbc::execute(stmt);
+    } catch (const std::exception& e) {
+        Session::SetError("DBAPI: Failed to delete message.");
+        std::cerr << "[ERROR] DeleteMessage: " << e.what() << std::endl;
         throw;
     }
 }

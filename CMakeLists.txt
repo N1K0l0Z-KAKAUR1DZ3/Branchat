@@ -62,6 +62,8 @@ add_executable(Branchat1 ${PROJECT_SOURCES} ${IMGUI_SOURCES} ${ADDON_SOURCES})
 target_compile_definitions(Branchat1 PRIVATE
         NANODBC_USE_ODBC_VERSION=0x0380
         SQL_WCHART_CONVERT
+        # Absolute path to the Assets folder, so fonts load regardless of user or CWD
+        BRANCHAT_ASSETS_DIR="${CMAKE_SOURCE_DIR}/Assets"
 )
 
 target_include_directories(Branchat1 PRIVATE

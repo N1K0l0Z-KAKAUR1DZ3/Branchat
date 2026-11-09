@@ -3,8 +3,6 @@
 #include <iostream>
 #include <thread>
 
-#include "../../GUI/GUI.h"
-
 void RootChat::PrintData() const {
     std::cout << "\t" << std::format("rootID: {}, name: {}, has children: {}", id, name, hasChildren) << std::endl;
     PrintConversation();
@@ -36,17 +34,11 @@ void RootChat::SendPrompt(const std::string& prompt, std::vector<Attachment> att
         messages.push_back(std::move(userMsg));
 
         waitingResponse = true;
-        std::thread([this, prompt]() {
-            try {
-                std::string response = Session::ReceiveAIResponse();
-                messages.push_back(Message(id, id, "model", response));
-                DBAPI::SaveMessage(messages.back());
-                GUI::scrollDown = true;
-            } catch (const std::exception& e) {
-                Session::SetError(std::string("AI Thread Error: ") + e.what());
-                std::cerr << "[ERROR] AI Thread: " << e.what() << std::endl;
-            }
-            waitingResponse = false;
+        // Build the request here (UI thread) so the worker shares no state with us.
+        std::vector<Message> payload = Session::BuildContextPayload();
+        const int chatId = id, grpId = groupId, rootForMsg = id;
+        std::thread([payload = std::move(payload), chatId, grpId, rootForMsg]() mutable {
+            Session::RunAIRequest(std::move(payload), chatId, grpId, rootForMsg);
         }).detach();
     } catch (const std::exception& e) {
         Session::SetError(std::string("Failed to send prompt: ") + e.what());

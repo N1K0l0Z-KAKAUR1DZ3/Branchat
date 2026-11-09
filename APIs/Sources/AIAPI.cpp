@@ -3,7 +3,11 @@
 
 void AIAPI::init() {
     std::cout <<"Initializing AI API..." << std::endl;
-    url = std::getenv("API_URL1");
+    const char* envUrl = std::getenv("API_URL1");
+    if (envUrl == nullptr || envUrl[0] == '\0') {
+        throw std::runtime_error("API_URL1 is not set. Set it to your AI endpoint URL (including the API key) before starting the app.");
+    }
+    url = envUrl;
     CURLcode globalRes = curl_global_init(CURL_GLOBAL_DEFAULT);
     if (globalRes != CURLE_OK) {
         throw std::runtime_error("CRITICAL: Failed to initialize libcurl globally: " + std::string(curl_easy_strerror(globalRes)));

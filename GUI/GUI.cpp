@@ -8,12 +8,111 @@
 #include "../Dependencies/imgui/ImGuiColorTextEdit-master/TextEditor.h"
 #include "ImageInput.h"
 #include "TextureCache.h"
+#include <filesystem>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
+
+// Only plain http/https URLs may be opened, and nothing with control characters.
+static bool IsSafeHttpUrl(const std::string &url) {
+    if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0) return false;
+    for (unsigned char c : url) {
+        if (c < 0x20 || c == 0x7f) return false; // reject control chars, including newlines
+    }
+    return true;
+}
 
 void LinkCallback(ImGui::MarkdownLinkCallbackData data_) {
     std::string url(data_.link, data_.linkLength);
-    // On Windows, use ShellExecute. On Linux/macOS, use:
-    std::string command = "xdg-open " + url;
-    system(command.c_str());
+    if (!IsSafeHttpUrl(url)) {
+        Session::SetError("Blocked opening a link that is not a plain http/https URL.");
+        return;
+    }
+
+    // Launch xdg-open WITHOUT a shell, passing the URL as a separate argument,
+    // so link text can never be interpreted as shell commands. Double-fork so
+    // the opener is reparented to init and leaves no zombie.
+    pid_t pid = fork();
+    if (pid == 0) {
+        pid_t grandchild = fork();
+        if (grandchild == 0) {
+            execlp("xdg-open", "xdg-open", url.c_str(), static_cast<char *>(nullptr));
+            _exit(127); // exec failed
+        }
+        _exit(0);
+    } else if (pid > 0) {
+        waitpid(pid, nullptr, 0); // reap the short-lived middle process
+    }
+}
+
+// Locate an asset file. Prefers the folder baked in at build time
+// (BRANCHAT_ASSETS_DIR), then falls back to ./Assets and ../Assets so the app
+// also works when run from the build directory or next to the Assets folder.
+#ifndef BRANCHAT_ASSETS_DIR
+#define BRANCHAT_ASSETS_DIR "Assets"
+#endif
+static std::string AssetPath(const char *fileName) {
+    namespace fs = std::filesystem;
+    const std::string candidates[] = {BRANCHAT_ASSETS_DIR, "Assets", "../Assets", "../../Assets"};
+    for (const auto &base : candidates) {
+        std::error_code ec;
+        fs::path p = fs::path(base) / fileName;
+        if (fs::exists(p, ec)) return p.string();
+    }
+    // Nothing found; return the build-time path so the error message is informative
+    return (fs::path(BRANCHAT_ASSETS_DIR) / fileName).string();
+}
+
+// ---- Search + theme helpers ----
+namespace {
+    bool CiContains(const std::string &haystack, const std::string &needle) {
+        if (needle.empty()) return true;
+        auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+                              [](char a, char b) {
+                                  return std::tolower(static_cast<unsigned char>(a)) ==
+                                         std::tolower(static_cast<unsigned char>(b));
+                              });
+        return it != haystack.end();
+    }
+    bool RootMatches(const RootChat &r, const std::string &q) {
+        if (CiContains(r.name, q)) return true;
+        for (const auto &m : r.messages) if (CiContains(m.Content, q)) return true;
+        return false;
+    }
+    bool GroupMatches(const Group &g, const std::string &q) {
+        if (CiContains(g.name, q)) return true;
+        for (const auto &r : g.roots) if (RootMatches(r, q)) return true;
+        return false;
+    }
+    // Hover/selection highlight colors that read on both light and dark themes.
+    ImU32 HoverPillColor(bool dark) { return dark ? IM_COL32(255, 255, 255, 15) : IM_COL32(0, 0, 0, 20); }
+    ImU32 SelectPillColor(bool dark) { return dark ? IM_COL32(255, 255, 255, 30) : IM_COL32(0, 0, 0, 40); }
+    ImVec4 UserTextColor(bool dark) { return dark ? ImVec4(0.2f, 0.8f, 1.0f, 1.0f) : ImVec4(0.0f, 0.35f, 0.75f, 1.0f); }
+}
+
+// Applies a full style preset (dark or light) plus Branchat's rounding and accents.
+void GUI::ApplyTheme(bool dark) {
+    if (dark) ImGui::StyleColorsDark();
+    else ImGui::StyleColorsLight();
+
+    ImGuiStyle &style = ImGui::GetStyle();
+    style.WindowRounding = 8.0f;
+    style.FrameRounding = 6.0f;
+    style.PopupRounding = 6.0f;
+    style.ScrollbarRounding = 12.0f;
+    style.GrabRounding = 6.0f;
+    style.FramePadding = ImVec2(8, 6);
+    style.ItemSpacing = ImVec2(8, 8);
+    style.ItemInnerSpacing = ImVec2(6, 6);
+
+    if (dark) {
+        style.Colors[ImGuiCol_Header] = ImVec4(0.2f, 0.4f, 0.8f, 0.6f);
+        style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.2f, 0.5f, 0.9f, 0.8f);
+        style.Colors[ImGuiCol_Button] = ImVec4(0.2f, 0.2f, 0.25f, 1.0f);
+        style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.3f, 0.3f, 0.35f, 1.0f);
+    }
 }
 
 void GUI::InitializeMarkdown() {
@@ -166,9 +265,17 @@ bool GUI::Initialize(int windowWidth, int windowHeight, const std::string &windo
     ImFontConfig fontConfig;
     fontConfig.OversampleH = 3;
     fontConfig.OversampleV = 3;
-    GUI::fancy = io.Fonts->AddFontFromFileTTF("/home/metanika/CLionProjects/Branchat/Assets/PlayfairDisplay-VariableFont_wght.ttf", 20.0f, &fontConfig);
-    GUI::jbFont = io.Fonts->AddFontFromFileTTF("/home/metanika/CLionProjects/Branchat/Assets/JetBrainsMono-ExtraLight.ttf", 20.0f, &fontConfig);
-    GUI::roboto = io.Fonts->AddFontFromFileTTF("/home/metanika/CLionProjects/Branchat/Assets/Roboto-VariableFont_wdth,wght.ttf", 20.0f, &fontConfig);
+    GUI::fancy = io.Fonts->AddFontFromFileTTF(AssetPath("PlayfairDisplay-VariableFont_wght.ttf").c_str(), 20.0f, &fontConfig);
+    GUI::jbFont = io.Fonts->AddFontFromFileTTF(AssetPath("JetBrainsMono-ExtraLight.ttf").c_str(), 20.0f, &fontConfig);
+    GUI::roboto = io.Fonts->AddFontFromFileTTF(AssetPath("Roboto-VariableFont_wdth,wght.ttf").c_str(), 20.0f, &fontConfig);
+    // If any font failed to load, fall back to the built-in font instead of crashing
+    if (!GUI::fancy || !GUI::jbFont || !GUI::roboto) {
+        ImFont *fallback = io.Fonts->AddFontDefault();
+        if (!GUI::fancy) GUI::fancy = fallback;
+        if (!GUI::jbFont) GUI::jbFont = fallback;
+        if (!GUI::roboto) GUI::roboto = fallback;
+        Session::SetError("Some fonts could not be loaded from the Assets folder; using a default font.");
+    }
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
     // Setup Platform/Renderer backends
@@ -179,25 +286,8 @@ bool GUI::Initialize(int windowWidth, int windowHeight, const std::string &windo
     glfwSetDropCallback(window, OnFilesDropped);
 
 
-    ImGuiStyle &style = ImGui::GetStyle();
-    style.WindowRounding = 8.0f;
-    style.FrameRounding = 6.0f;
-    style.PopupRounding = 6.0f;
-    style.ScrollbarRounding = 12.0f;
-    style.GrabRounding = 6.0f;
-
-    // Add air around elements
-    style.FramePadding = ImVec2(8, 6);
-    style.ItemSpacing = ImVec2(8, 8);
-    style.ItemInnerSpacing = ImVec2(6, 6);
-
-    ImGui::StyleColorsDark(); // Start with the dark preset
-
-    // Tweak the accents to match your branding (e.g., a nice blue)
-    style.Colors[ImGuiCol_Header] = ImVec4(0.2f, 0.4f, 0.8f, 0.6f);
-    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.2f, 0.5f, 0.9f, 0.8f);
-    style.Colors[ImGuiCol_Button] = ImVec4(0.2f, 0.2f, 0.25f, 1.0f);
-    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.3f, 0.3f, 0.35f, 1.0f);
+    // Apply the initial theme (rounding, padding and accent colors)
+    ApplyTheme(darkTheme);
     return true;
 }
 
@@ -205,6 +295,7 @@ void GUI::StartRenderLoop() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
         CollectPickedImages();
+        Session::ApplyPendingResults(); // bring finished AI replies onto the UI thread
         TextureCache::CollectGarbage();
         BeginFrame();
         RenderMainApp();
@@ -226,7 +317,8 @@ void GUI::EndFrame() {
     int display_w, display_h;
     glfwGetFramebufferSize(window, &display_w, &display_h);
     glViewport(0, 0, display_w, display_h);
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    if (darkTheme) glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    else glClearColor(0.94f, 0.94f, 0.96f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -234,6 +326,7 @@ void GUI::EndFrame() {
 }
 
 void GUI::RenderMainApp() {
+    ImGui::GetIO().FontGlobalScale = fontScale; // live font-size control
     ImGui::PushFont(roboto);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->Pos);
     ImGui::SetNextWindowSize(ImGui::GetMainViewport()->Size);
@@ -297,6 +390,11 @@ void GUI::RenderMainApp() {
         }
         ImGui::Spacing(); // Adds a small visual gap
 
+        // Search box: filters groups/root chats by name or message content
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##search", "Search chats & messages...", searchBuffer, sizeof(searchBuffer));
+        ImGui::Spacing();
+
         // 2. Create the dynamic button label
         // This ensures the button always displays the current active limit
         std::string contextLabel = "Context Limit: " + std::to_string(Session::contextLimit);
@@ -343,16 +441,44 @@ void GUI::RenderMainApp() {
             ImGui::EndPopup();
         }
 
+        // ==========================================
+        // SETTINGS (font size + theme)
+        // ==========================================
+        if (ImGui::Button("Settings", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+            ImGui::OpenPopup("Settings");
+        }
+        if (ImGui::BeginPopupModal("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextDisabled("Appearance");
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            ImGui::SetNextItemWidth(220.0f);
+            ImGui::SliderFloat("Font size", &fontScale, 0.8f, 1.6f, "%.2fx");
+
+            int themeIdx = darkTheme ? 0 : 1;
+            ImGui::SetNextItemWidth(220.0f);
+            if (ImGui::Combo("Theme", &themeIdx, "Dark\0Light\0")) {
+                darkTheme = (themeIdx == 0);
+                ApplyTheme(darkTheme);
+            }
+
+            ImGui::Spacing();
+            if (ImGui::Button("Close", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
+        const std::string searchQuery = searchBuffer;
         for (auto &group: Base::groups) {
+            if (!searchQuery.empty() && !GroupMatches(group, searchQuery)) continue;
             ImGui::PushID(group.id);
 
-            // FORCE OPEN LOGIC (GROUP)
-            if (forceOpenGroupId == group.id) {
+            // FORCE OPEN LOGIC (GROUP) — also auto-open while searching so matches show
+            if (!searchQuery.empty() || forceOpenGroupId == group.id) {
                 ImGui::SetNextItemOpen(true, ImGuiCond_Always);
-                forceOpenGroupId = -1;
+                if (forceOpenGroupId == group.id) forceOpenGroupId = -1;
             }
 
             // ==========================================
@@ -384,7 +510,7 @@ void GUI::RenderMainApp() {
             // 3. DRAW CUSTOM PILL HIGHLIGHT
             if (groupHovered || groupPopupOpen) {
                 // Draw the pill strictly around the text + button area
-                ImGui::GetWindowDrawList()->AddRectFilled(groupMin, groupMax, IM_COL32(255, 255, 255, 15), 15.0f);
+                ImGui::GetWindowDrawList()->AddRectFilled(groupMin, groupMax, HoverPillColor(darkTheme), 15.0f);
             }
 
             // 4. VISUAL FIX: Keep button close to name, but use Alpha to hide it
@@ -409,14 +535,15 @@ void GUI::RenderMainApp() {
                     triggerModal = true;
                 }
                 if (ImGui::Selectable("Delete")) {
-                    Action = [&group](std::string ff) { group.Delete(); };
-                    pendingAction = true;
+                    RequestConfirm("Delete group \"" + group.name + "\" and all of its chats and messages? This cannot be undone.",
+                                   [&group] { group.Delete(); });
                 }
                 ImGui::EndPopup();
             }
 
             if (groupOpen) {
                 for (auto &root: group.roots) {
+                    if (!searchQuery.empty() && !RootMatches(root, searchQuery)) continue;
                     ImGui::PushID(root.id);
 
                     bool isExpanded = (Tree::rootId == root.id);
@@ -469,7 +596,7 @@ void GUI::RenderMainApp() {
 
                     // Custom Background for Roots (Brighter if actively selected!)
                     if (isSelected || rootHovered || rootPopupOpen) {
-                        ImU32 pillColor = isSelected ? IM_COL32(255, 255, 255, 30) : IM_COL32(255, 255, 255, 15);
+                        ImU32 pillColor = isSelected ? SelectPillColor(darkTheme) : HoverPillColor(darkTheme);
                         ImGui::GetWindowDrawList()->AddRectFilled(rootMin, rootMax, pillColor, 15.0f);
                     }
 
@@ -498,8 +625,8 @@ void GUI::RenderMainApp() {
                             triggerModal = true;
                         }
                         if (ImGui::Selectable("Delete")) {
-                            Action = [&root](const std::string &inputStr) { root.Delete(); };
-                            pendingAction = true;
+                            RequestConfirm("Delete chat \"" + root.name + "\" and everything branched from it? This cannot be undone.",
+                                           [&root] { root.Delete(); });
                         }
                         ImGui::EndPopup();
                     }
@@ -568,9 +695,10 @@ void GUI::RenderMainApp() {
                 ImVec2 tSize = ImGui::CalcTextSize(msg.Content.c_str(), NULL, false, maxWrapWidth);
                 float textLocalStartX = availWidth - tSize.x - ImGui::GetStyle().ItemSpacing.x;
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(textLocalStartX, 0.0f));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 1.0f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, UserTextColor(darkTheme));
             } else {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+                // Model text uses the theme's default text color so it stays readable in light mode
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_Text));
                 ImGui::PushFont(GUI::roboto);
             }
 
@@ -582,19 +710,57 @@ void GUI::RenderMainApp() {
         float footerH = 30.0f;
         ImVec2 fStart = ImGui::GetCursorScreenPos();
         ImVec2 fEnd = ImVec2(screenStartX + availWidth, fStart.y + footerH);
-        ImVec2 labelSize = ImGui::CalcTextSize("Copy");
-        ImVec2 btnPadding = ImVec2(12.0f, 4.0f);
-        ImVec2 btnSize = ImVec2(labelSize.x + btnPadding.x * 2.0f, labelSize.y + btnPadding.y * 2.0f);
-        float vOffset = (footerH - btnSize.y) / 2.0f;
-
         bool rHovered = ImGui::IsMouseHoveringRect(rowStartScreenPos, fEnd);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, btnPadding);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, rHovered ? 1.0f : 0.0f);
-        float btnX = isUser ? (screenStartX + availWidth - btnSize.x - 10.0f) : (screenStartX + 10.0f);
-        ImGui::SetCursorScreenPos(ImVec2(btnX, fStart.y + vOffset));
-        if (hasText && ImGui::Button("Copy", btnSize)) ImGui::SetClipboardText(msg.Content.c_str());
-        ImGui::PopStyleVar(3);
+
+        // Hover action bar: Copy / Edit / Delete, only shown while the row is hovered
+        if (rHovered) {
+            ImVec2 btnPadding = ImVec2(12.0f, 4.0f);
+            float btnH = ImGui::CalcTextSize("Copy").y + btnPadding.y * 2.0f;
+            float vOffset = (footerH - btnH) / 2.0f;
+
+            const bool canCopy = hasText;
+            const bool canEdit = hasText && msg.Id > 0; // only saved messages can be edited
+            const bool canDelete = msg.Id > 0;
+            auto bw = [&](const char *l) { return ImGui::CalcTextSize(l).x + btnPadding.x * 2.0f; };
+            const float gap = 6.0f;
+            float totalW = 0.0f;
+            if (canCopy) totalW += bw("Copy");
+            if (canEdit) totalW += (totalW > 0 ? gap : 0) + bw("Edit");
+            if (canDelete) totalW += (totalW > 0 ? gap : 0) + bw("Delete");
+
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, btnPadding);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+            float startX = isUser ? (screenStartX + availWidth - totalW - 10.0f) : (screenStartX + 10.0f);
+            ImGui::SetCursorScreenPos(ImVec2(startX, fStart.y + vOffset));
+            bool firstBtn = true;
+            auto sl = [&] { if (!firstBtn) ImGui::SameLine(0.0f, gap); firstBtn = false; };
+            if (canCopy) { sl(); if (ImGui::Button("Copy")) ImGui::SetClipboardText(msg.Content.c_str()); }
+            if (canEdit) {
+                sl();
+                if (ImGui::Button("Edit")) {
+                    editMessageId = msg.Id;
+                    std::snprintf(editBuffer, sizeof(editBuffer), "%s", msg.Content.c_str());
+                    triggerEditModal = true;
+                }
+            }
+            if (canDelete) {
+                sl();
+                if (ImGui::Button("Delete")) {
+                    RequestConfirm("Delete this message? This cannot be undone.",
+                                   [id = msg.Id] {
+                                       if (!Session::chatPtr) return;
+                                       auto &msgs = Session::chatPtr->messages;
+                                       auto it = std::find_if(msgs.begin(), msgs.end(),
+                                                              [&](const Message &m) { return m.Id == id; });
+                                       if (it != msgs.end()) {
+                                           DBAPI::DeleteMessage(id);
+                                           msgs.erase(it);
+                                       }
+                                   });
+                }
+            }
+            ImGui::PopStyleVar(2);
+        }
         ImGui::SetCursorScreenPos(ImVec2(screenStartX, fStart.y + footerH));
         ImGui::Separator();
         ImGui::Spacing();
@@ -698,7 +864,10 @@ void GUI::RenderMainApp() {
         if (ImGui::Selectable("Create Branch")) { triggerModal = true; Action = [](const std::string &s) { Session::chatPtr->CreateBranch(s); }; }
         if (ImGui::Selectable("Rename")) { strncpy(modalInputBuffer, Session::chatPtr->name.c_str(), sizeof(modalInputBuffer) - 1); triggerModal = true; Action = [](const std::string &s) { Session::chatPtr->Rename(s); }; }
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.2f, 0.2f, 1.0f));
-        if (ImGui::Selectable("Delete")) { pendingAction = true; Action = [](const std::string &s) { Session::chatPtr->Delete(); }; }
+        if (ImGui::Selectable("Delete")) {
+            RequestConfirm("Delete this chat and everything branched from it? This cannot be undone.",
+                           [] { if (Session::chatPtr) Session::chatPtr->Delete(); });
+        }
         ImGui::PopStyleColor();
         ImGui::EndPopup();
     }
@@ -762,7 +931,7 @@ void GUI::RenderTreeNodes(std::vector<Chat> &branches) {
 
         // Custom Background (Brighter if actively selected!)
         if (isSelected || chatHovered || chatPopupOpen) {
-            ImU32 pillColor = isSelected ? IM_COL32(255, 255, 255, 30) : IM_COL32(255, 255, 255, 15);
+            ImU32 pillColor = isSelected ? SelectPillColor(darkTheme) : HoverPillColor(darkTheme);
 
             // 3. VISUAL FIX: Background pill with 15.0f rounding
             ImGui::GetWindowDrawList()->AddRectFilled(chatMin, chatMax, pillColor, 15.0f);
@@ -798,8 +967,8 @@ void GUI::RenderTreeNodes(std::vector<Chat> &branches) {
                 Action = [&chat](const std::string &inputStr) { chat.Rename(inputStr); };
             }
             if (ImGui::Selectable("Delete")) {
-                Action = [&chat](const std::string &inputStr) { chat.Delete(); };
-                pendingAction = true;
+                RequestConfirm("Delete branch \"" + chat.name + "\" and all of its sub-branches? This cannot be undone.",
+                               [&chat] { chat.Delete(); });
             }
             ImGui::EndPopup();
         }
@@ -815,8 +984,75 @@ void GUI::RenderTreeNodes(std::vector<Chat> &branches) {
     }
 }
 
+void GUI::RequestConfirm(const std::string &text, std::function<void()> action, const std::string &buttonLabel) {
+    confirmText = text;
+    confirmAction = std::move(action);
+    confirmButtonLabel = buttonLabel;
+    triggerConfirm = true;
+}
+
+void GUI::RenderConfirmModal() {
+    if (triggerConfirm) {
+        ImGui::OpenPopup("##ConfirmModal");
+        triggerConfirm = false;
+    }
+    ImGui::PushFont(roboto);
+    if (ImGui::BeginPopupModal("##ConfirmModal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 22.0f);
+        ImGui::TextWrapped("%s", confirmText.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.3f, 0.3f, 1.0f));
+        if (ImGui::Button(confirmButtonLabel.c_str(), ImVec2(120, 0))) {
+            confirmPending = true; // runs in ExecuteDeferredActions, after the frame
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleColor(2);
+        ImGui::SameLine(0.0f, 20.0f);
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            confirmAction = nullptr;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopFont();
+}
+
+void GUI::RenderEditModal() {
+    if (triggerEditModal) {
+        ImGui::OpenPopup("Edit message##EditModal");
+        triggerEditModal = false;
+    }
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowSize(ImVec2(vp->Size.x * 0.5f, 0), ImGuiCond_Appearing);
+    ImGui::PushFont(roboto);
+    if (ImGui::BeginPopupModal("Edit message##EditModal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextDisabled("Editing only changes the stored text; it does not re-run the AI.");
+        ImGui::Spacing();
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::InputTextMultiline("##editText", editBuffer, sizeof(editBuffer),
+                                  ImVec2(vp->Size.x * 0.5f, vp->Size.y * 0.3f));
+        ImGui::Spacing();
+        if (ImGui::Button("Save", ImVec2(120, 0))) {
+            editPending = true; // applied in ExecuteDeferredActions
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine(0.0f, 20.0f);
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            editMessageId = -1;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopFont();
+}
+
 void GUI::RenderModals() {
     RenderImageViewer();
+    RenderConfirmModal();
+    RenderEditModal();
     if (triggerModal) {
         // std::cout << "DEBUG: Trigger detected! Attempting to open popup." << std::endl;
         ImGui::OpenPopup("##UniqueInputModal");
@@ -851,6 +1087,28 @@ void GUI::ExecuteDeferredActions() {
         pendingAction = false;
         Action = nullptr;
         modalInputBuffer[0] = '\0';
+    }
+
+    // Confirmed destructive action (delete group/chat/branch/message)
+    if (confirmPending) {
+        if (confirmAction) confirmAction();
+        confirmAction = nullptr;
+        confirmPending = false;
+    }
+
+    // Saved message edit
+    if (editPending) {
+        if (Session::chatPtr && editMessageId > 0) {
+            auto &msgs = Session::chatPtr->messages;
+            auto it = std::find_if(msgs.begin(), msgs.end(),
+                                   [](const Message &m) { return m.Id == editMessageId; });
+            if (it != msgs.end()) {
+                DBAPI::UpdateMessageText(editMessageId, editBuffer);
+                it->Content = editBuffer;
+            }
+        }
+        editPending = false;
+        editMessageId = -1;
     }
 }
 

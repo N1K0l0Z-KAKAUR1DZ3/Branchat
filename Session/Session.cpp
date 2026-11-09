@@ -1,5 +1,7 @@
 #include "Session.h"
 #include <iostream>
+#include <thread>
+#include "../GUI/GUI.h"
 
 void Session::SetError(const std::string &err) {
     std::lock_guard<std::mutex> lock(globalErrorMutex);
@@ -8,11 +10,18 @@ void Session::SetError(const std::string &err) {
 
 Session::Session() {
     std::cout << "[SESSION] Session initializing. Initializing APIs and loading Base groups..." << std::endl;
-    DBAPI::init();
-    AIAPI::init();
-    Base::groups = DBAPI::GetBaseGroups();
     contextLimit = 30;
-    std::cout << "[SESSION] Session initialized. Loaded " << Base::groups.size() << " groups." << std::endl;
+    // Catch startup failures (e.g. missing env vars, DB unreachable) so the app
+    // opens and shows the error in its banner instead of terminating before main().
+    try {
+        DBAPI::init();
+        AIAPI::init();
+        Base::groups = DBAPI::GetBaseGroups();
+        std::cout << "[SESSION] Session initialized. Loaded " << Base::groups.size() << " groups." << std::endl;
+    } catch (const std::exception& e) {
+        SetError(std::string("Startup error: ") + e.what());
+        std::cerr << "[FATAL] Session init failed: " << e.what() << std::endl;
+    }
 }
 
 void Session::AttemptRehook() {
@@ -69,8 +78,10 @@ std::vector<Message>* Session::FetchAdditionalContext() {
     return &Tree::FindChatById(Tree::topBranches, parentId)->messages;
 }
 
-std::string Session::ReceiveAIResponse() {
-    std::cout << "[SESSION] Receiving AI Response..." << std::endl;
+// Runs on the UI thread. Assembles the messages to send (parent context +
+// this chat's messages, trimmed to the context limit) into a self-contained copy.
+std::vector<Message> Session::BuildContextPayload() {
+    std::cout << "[SESSION] Building context payload..." << std::endl;
     std::vector<Message> contextPayload;
     auto additionalContext = FetchAdditionalContext();
 
@@ -80,18 +91,67 @@ std::string Session::ReceiveAIResponse() {
     }
 
     contextPayload.insert(contextPayload.end(), chatPtr->messages.begin(), chatPtr->messages.end());
-    if (contextPayload.size() > contextLimit) {
-        if (contextPayload.size() > (contextLimit)) {
-            printf("history too long, trimming \n");
-            size_t countToRemove = contextPayload.size() - contextLimit;
-            contextPayload.erase(contextPayload.begin(), contextPayload.begin() + countToRemove);
-        }
+    if (contextPayload.size() > static_cast<size_t>(contextLimit)) {
+        printf("history too long, trimming \n");
+        size_t countToRemove = contextPayload.size() - contextLimit;
+        contextPayload.erase(contextPayload.begin(), contextPayload.begin() + countToRemove);
+    }
+    return contextPayload;
+}
+
+// Runs on a worker thread. Touches ONLY its own payload copy and the result
+// queue; it never reads or writes any chat, the DB, or the GUI directly.
+void Session::RunAIRequest(std::vector<Message> payload, int chatId, int groupId, int rootIdForMsg) {
+    PendingAIResult result;
+    result.chatId = chatId;
+    result.groupId = groupId;
+    result.rootIdForMsg = rootIdForMsg;
+    try {
+        result.text = AIAPI::GetAIResponse(payload);
+        result.ok = true;
+    } catch (const std::exception& e) {
+        result.ok = false;
+        result.text = std::string("AI Thread Error: ") + e.what();
+        std::cerr << "[ERROR] AI Thread (Chat ID " << chatId << "): " << e.what() << std::endl;
+    }
+    std::lock_guard<std::mutex> lock(resultMutex);
+    pendingResults.push_back(std::move(result));
+}
+
+// Runs on the UI thread, once per frame. Appends finished replies to their chats
+// and persists them. Re-locates each chat by id, so a reply whose chat was
+// deleted meanwhile is simply dropped.
+void Session::ApplyPendingResults() {
+    std::vector<PendingAIResult> results;
+    {
+        std::lock_guard<std::mutex> lock(resultMutex);
+        if (pendingResults.empty()) return;
+        results.swap(pendingResults);
     }
 
-    auto response = AIAPI::GetAIResponse(contextPayload);
+    for (auto& r : results) {
+        RootChat* target = Tree::FindChatById(Tree::topBranches, r.chatId);
+        if (target == nullptr) {
+            auto group = Base::FindGroup(r.groupId);
+            if (group) target = group->FindRootChat(r.chatId);
+        }
 
-    std::cout << "[SESSION] AI Response received. Length: " << response.length() << std::endl;
-    return response;
+        if (target == nullptr) {
+            std::cout << "[SESSION] AI reply dropped: chat " << r.chatId << " no longer exists." << std::endl;
+            if (!r.ok) SetError(r.text);
+            continue;
+        }
+
+        if (r.ok) {
+            Message reply(r.rootIdForMsg, r.chatId, "model", r.text);
+            DBAPI::SaveMessage(reply); // DB touched only on the UI thread
+            target->messages.push_back(std::move(reply));
+            GUI::scrollDown = true;
+        } else {
+            SetError(r.text);
+        }
+        target->waitingResponse = false;
+    }
 }
 
 void Session::ReloadTree() {

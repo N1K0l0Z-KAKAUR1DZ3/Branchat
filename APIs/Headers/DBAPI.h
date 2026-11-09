@@ -36,8 +36,10 @@ public:
     // update
     static void UpdateGroupName( int GroupId, const std::string& newName);
     static void UpdateChatName(int chatId, const std::string& newName);
+    static void UpdateMessageText(int messageId, const std::string& newText);
     // delete
     static void DeleteChat(int chatId);
     static void DeleteGroup(int groupId);
+    static void DeleteMessage(int messageId);
 };
 #endif //BRANCHAT1_DBAPI_H

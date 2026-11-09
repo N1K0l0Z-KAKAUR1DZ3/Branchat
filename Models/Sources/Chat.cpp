@@ -20,17 +20,11 @@ void Chat::SendPrompt(const std::string& prompt, std::vector<Attachment> attachm
         messages.push_back(std::move(userMsg));
 
         waitingResponse = true;
-
-        std::thread([this, prompt]() {
-            try {
-                std::string response = Session::ReceiveAIResponse();
-                messages.push_back(Message(rootId, id, "model", response));
-                DBAPI::SaveMessage(messages.back());
-            } catch (const std::exception& e) {
-                Session::SetError(std::string("AI Thread Error: ") + e.what());
-                std::cerr << "[ERROR] AI Thread (Chat ID " << id << "): " << e.what() << std::endl;
-            }
-            waitingResponse = false;
+        // Build the request here (UI thread) so the worker shares no state with us.
+        std::vector<Message> payload = Session::BuildContextPayload();
+        const int chatId = id, grpId = groupId, rootForMsg = rootId;
+        std::thread([payload = std::move(payload), chatId, grpId, rootForMsg]() mutable {
+            Session::RunAIRequest(std::move(payload), chatId, grpId, rootForMsg);
         }).detach();
     } catch (const std::exception& e) {
         Session::SetError(std::string("Failed to send prompt: ") + e.what());
