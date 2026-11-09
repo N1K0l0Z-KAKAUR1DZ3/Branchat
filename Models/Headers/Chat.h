@@ -14,7 +14,7 @@ struct Chat : RootChat{
         rootId(_rootId),
         branches(std::move(_branches)){}
     void PrintData() const override;
-    void SendPrompt(const std::string& prompt) override;
+    void SendPrompt(const std::string& prompt, std::vector<Attachment> attachments = {}) override;
     void CreateBranch(const std::string &newChatName) override;
     void FocusChat() override;
     void Delete() override;

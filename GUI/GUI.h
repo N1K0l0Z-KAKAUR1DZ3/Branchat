@@ -30,6 +30,20 @@ private:
     inline static int forceOpenGroupId = -1;
     inline static int forceOpenRootId = -1;
     inline static int forceOpenChatId = -1;
+
+    // --- Images ---
+    inline static std::vector<Attachment> pendingAttachments;       // attached, not sent yet
+    inline static std::shared_ptr<const Attachment::Bytes> viewerImage; // image open in the viewer
+    inline static bool triggerViewer = false;
+    static void AddPendingAttachment(Attachment attachment);
+    static void PasteImageFromClipboard();
+    static void CollectPickedImages();
+    static void OnFilesDropped(GLFWwindow* window, int count, const char** paths);
+    static bool DrawImage(const Attachment& attachment, ImVec2 size);
+    static void RenderMessageAttachments(const std::vector<Attachment>& attachments, bool alignRight);
+    static float PendingAttachmentsHeight();
+    static void RenderPendingAttachments();
+    static void RenderImageViewer();
     static void BeginFrame();
     static void EndFrame();
     static void RenderMainApp();

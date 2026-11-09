@@ -25,11 +25,15 @@ void RootChat::FocusChat() {
     Session::chatPtr = this;
 }
 
-void RootChat::SendPrompt(const std::string& prompt) {
+void RootChat::SendPrompt(const std::string& prompt, std::vector<Attachment> attachments) {
     try {
-        std::cout << "[ROOT] SendPrompt triggered on RootChat ID: " << id << std::endl;
-        messages.push_back(Message(id, id, "user", prompt));
-        DBAPI::SaveMessage(messages.back());
+        std::cout << "[ROOT] SendPrompt triggered on RootChat ID: " << id
+                  << " with " << attachments.size() << " image(s)" << std::endl;
+        Message userMsg(id, id, "user", prompt);
+        userMsg.Attachments = std::move(attachments);
+        // Save before adding to the chat, so a failed save doesn't leave an unsaved message on screen
+        DBAPI::SaveMessage(userMsg);
+        messages.push_back(std::move(userMsg));
 
         waitingResponse = true;
         std::thread([this, prompt]() {

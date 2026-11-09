@@ -6,6 +6,8 @@
 #include "imgui_impl_opengl3.h"
 #include "../Dependencies/imgui/IconFontCppHeaders-main/IconsFontAwesome5.h"
 #include "../Dependencies/imgui/ImGuiColorTextEdit-master/TextEditor.h"
+#include "ImageInput.h"
+#include "TextureCache.h"
 
 void LinkCallback(ImGui::MarkdownLinkCallbackData data_) {
     std::string url(data_.link, data_.linkLength);
@@ -164,14 +166,17 @@ bool GUI::Initialize(int windowWidth, int windowHeight, const std::string &windo
     ImFontConfig fontConfig;
     fontConfig.OversampleH = 3;
     fontConfig.OversampleV = 3;
-    GUI::fancy = io.Fonts->AddFontFromFileTTF("/home/nika/test/Branchat1/Assets/PlayfairDisplay-VariableFont_wght.ttf", 20.0f, &fontConfig);
-    GUI::jbFont = io.Fonts->AddFontFromFileTTF("/home/nika/test/Branchat1/Assets/JetBrainsMono-ExtraLight.ttf", 20.0f, &fontConfig);
-    GUI::roboto = io.Fonts->AddFontFromFileTTF("/home/nika/test/Branchat1/Assets/Roboto-VariableFont_wdth,wght.ttf", 20.0f, &fontConfig);
+    GUI::fancy = io.Fonts->AddFontFromFileTTF("/home/metanika/CLionProjects/Branchat/Assets/PlayfairDisplay-VariableFont_wght.ttf", 20.0f, &fontConfig);
+    GUI::jbFont = io.Fonts->AddFontFromFileTTF("/home/metanika/CLionProjects/Branchat/Assets/JetBrainsMono-ExtraLight.ttf", 20.0f, &fontConfig);
+    GUI::roboto = io.Fonts->AddFontFromFileTTF("/home/metanika/CLionProjects/Branchat/Assets/Roboto-VariableFont_wdth,wght.ttf", 20.0f, &fontConfig);
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
+
+    // Dropping image files onto the window attaches them to the next message
+    glfwSetDropCallback(window, OnFilesDropped);
 
 
     ImGuiStyle &style = ImGui::GetStyle();
@@ -199,6 +204,8 @@ bool GUI::Initialize(int windowWidth, int windowHeight, const std::string &windo
 void GUI::StartRenderLoop() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+        CollectPickedImages();
+        TextureCache::CollectGarbage();
         BeginFrame();
         RenderMainApp();
         RenderModals();
@@ -526,7 +533,9 @@ void GUI::RenderMainApp() {
 
     // --- [MODIFIED]: DYNAMIC LAYOUT CALCULATION ---
     float sendButtonWidth = ImGui::GetFrameHeightWithSpacing() * 1.5f;
-    float inputAreaWidth = ImGui::GetContentRegionAvail().x - sendButtonWidth - ImGui::GetStyle().ItemSpacing.x;
+    float attachButtonWidth = ImGui::CalcTextSize("Attach").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    float inputAreaWidth = ImGui::GetContentRegionAvail().x - sendButtonWidth - attachButtonWidth
+                           - ImGui::GetStyle().ItemSpacing.x * 2.0f;
 
     // Calculate prompt bar height
     ImVec2 textSize = ImGui::CalcTextSize(chatInputBuffer, NULL, false, inputAreaWidth);
@@ -536,7 +545,7 @@ void GUI::RenderMainApp() {
 
     // Height of the static control area (Buttons + Nav bar + Spacing)
     float staticControlsHeight = 85.0f;
-    float totalFooterHeight = promptBarHeight + staticControlsHeight;
+    float totalFooterHeight = promptBarHeight + staticControlsHeight + PendingAttachmentsHeight();
 
     // 2. MESSAGE HISTORY (Yields space to the footer)
     ImGui::BeginChild("MessageScroll", ImVec2(0, -totalFooterHeight), true);
@@ -549,19 +558,26 @@ void GUI::RenderMainApp() {
         float screenStartX = rowStartScreenPos.x;
 
         bool isUser = (msg.Role == "user");
-        if (isUser) {
-            ImVec2 tSize = ImGui::CalcTextSize(msg.Content.c_str(), NULL, false, maxWrapWidth);
-            float textLocalStartX = availWidth - tSize.x - ImGui::GetStyle().ItemSpacing.x;
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(textLocalStartX, 0.0f));
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 1.0f, 1.0f));
-        } else {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
-            ImGui::PushFont(GUI::roboto);
+        if (!msg.Attachments.empty()) {
+            RenderMessageAttachments(msg.Attachments, isUser);
         }
 
-        RenderMessageContent(msg.Content, isUser);
-        if (!isUser) ImGui::PopFont();
-        ImGui::PopStyleColor();
+        const bool hasText = !msg.Content.empty();
+        if (hasText) {
+            if (isUser) {
+                ImVec2 tSize = ImGui::CalcTextSize(msg.Content.c_str(), NULL, false, maxWrapWidth);
+                float textLocalStartX = availWidth - tSize.x - ImGui::GetStyle().ItemSpacing.x;
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(textLocalStartX, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 1.0f, 1.0f));
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+                ImGui::PushFont(GUI::roboto);
+            }
+
+            RenderMessageContent(msg.Content, isUser);
+            if (!isUser) ImGui::PopFont();
+            ImGui::PopStyleColor();
+        }
 
         float footerH = 30.0f;
         ImVec2 fStart = ImGui::GetCursorScreenPos();
@@ -577,7 +593,7 @@ void GUI::RenderMainApp() {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, rHovered ? 1.0f : 0.0f);
         float btnX = isUser ? (screenStartX + availWidth - btnSize.x - 10.0f) : (screenStartX + 10.0f);
         ImGui::SetCursorScreenPos(ImVec2(btnX, fStart.y + vOffset));
-        if (ImGui::Button("Copy", btnSize)) ImGui::SetClipboardText(msg.Content.c_str());
+        if (hasText && ImGui::Button("Copy", btnSize)) ImGui::SetClipboardText(msg.Content.c_str());
         ImGui::PopStyleVar(3);
         ImGui::SetCursorScreenPos(ImVec2(screenStartX, fStart.y + footerH));
         ImGui::Separator();
@@ -606,6 +622,9 @@ void GUI::RenderMainApp() {
     bool isWaiting = Session::chatPtr->waitingResponse;
     if (isWaiting) ImGui::BeginDisabled();
 
+    // Images waiting to be sent with the next message
+    RenderPendingAttachments();
+
     // [MODIFIED]: WordWrap + Multiline, height based on calculated promptBarHeight
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.0f);
     ImGui::InputTextMultiline("##ChatInput", chatInputBuffer, IM_ARRAYSIZE(chatInputBuffer),
@@ -614,12 +633,36 @@ void GUI::RenderMainApp() {
     ImGui::PopStyleVar();
 
     ImGui::SameLine();
-    if (ImGui::Button("Send", ImVec2(-1, promptBarHeight)) || ImGui::IsKeyPressed(ImGuiKey_Enter) ) {
-        if (chatInputBuffer[0] != '\0') {
-            Session::chatPtr->SendPrompt(std::string(chatInputBuffer));
+    const bool dialogOpen = ImageInput::IsFileDialogOpen();
+    if (dialogOpen) ImGui::BeginDisabled();
+    if (ImGui::Button("Attach", ImVec2(attachButtonWidth, promptBarHeight))) {
+        ImageInput::OpenFileDialogAsync();
+    }
+    if (dialogOpen) ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Attach images\n(you can also paste with Ctrl+V or drag files here)");
+    }
+
+    // Ignore keyboard shortcuts while a dialog (rename, image viewer, ...) is open
+    const bool popupOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+
+    ImGui::SameLine();
+    bool sendPressed = ImGui::Button("Send", ImVec2(-1, promptBarHeight));
+    sendPressed |= !popupOpen && ImGui::IsKeyPressed(ImGuiKey_Enter);
+    if (sendPressed && !isWaiting && (chatInputBuffer[0] != '\0' || !pendingAttachments.empty())) {
+        const size_t countBefore = Session::chatPtr->messages.size();
+        Session::chatPtr->SendPrompt(std::string(chatInputBuffer), pendingAttachments);
+        // Only clear the input if the message was actually saved
+        if (Session::chatPtr->messages.size() > countBefore) {
             chatInputBuffer[0] = '\0';
+            pendingAttachments.clear();
             scrollBottom = true;
         }
+    }
+
+    // Ctrl+V with an image in the clipboard attaches it
+    if (!isWaiting && !popupOpen && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false)) {
+        PasteImageFromClipboard();
     }
     if (isWaiting) ImGui::EndDisabled();
 
@@ -773,6 +816,7 @@ void GUI::RenderTreeNodes(std::vector<Chat> &branches) {
 }
 
 void GUI::RenderModals() {
+    RenderImageViewer();
     if (triggerModal) {
         // std::cout << "DEBUG: Trigger detected! Attempting to open popup." << std::endl;
         ImGui::OpenPopup("##UniqueInputModal");
@@ -808,4 +852,200 @@ void GUI::ExecuteDeferredActions() {
         Action = nullptr;
         modalInputBuffer[0] = '\0';
     }
+}
+
+// ==========================================
+// IMAGES
+// ==========================================
+namespace {
+    constexpr size_t MaxPendingAttachments = 10;
+    constexpr float ThumbnailHeight = 64.0f;
+
+    // Largest size that keeps the image's aspect ratio and fits in maxW x maxH (never upscales)
+    ImVec2 FitImage(const Attachment &attachment, float maxW, float maxH) {
+        if (const ImageTexture *tex = TextureCache::Get(attachment.data)) {
+            const float scale = std::min({1.0f, maxW / tex->width, maxH / tex->height});
+            return ImVec2(tex->width * scale, tex->height * scale);
+        }
+        return ImVec2(std::min(maxW, 220.0f), std::min(maxH, 64.0f)); // placeholder box
+    }
+
+    std::string DescribeAttachment(const Attachment &attachment) {
+        const double kb = attachment.Size() / 1024.0;
+        char size[32];
+        if (kb >= 1024.0) snprintf(size, sizeof(size), "%.1f MB", kb / 1024.0);
+        else snprintf(size, sizeof(size), "%.0f KB", kb);
+        return (attachment.fileName.empty() ? std::string("image") : attachment.fileName) + " (" + size + ")";
+    }
+}
+
+void GUI::AddPendingAttachment(Attachment attachment) {
+    if (Session::chatPtr == nullptr) {
+        Session::SetError("Open a chat before adding images.");
+        return;
+    }
+    if (pendingAttachments.size() >= MaxPendingAttachments) {
+        Session::SetError("You can attach up to " + std::to_string(MaxPendingAttachments) + " images per message.");
+        return;
+    }
+    size_t total = attachment.Size();
+    for (const auto &a: pendingAttachments) total += a.Size();
+    if (total > AIAPI::ImageBudgetBytes) {
+        Session::SetError("These images are too large to send together (limit " +
+                          std::to_string(AIAPI::ImageBudgetBytes / (1024 * 1024)) + " MB per message).");
+        return;
+    }
+    pendingAttachments.push_back(std::move(attachment));
+}
+
+void GUI::PasteImageFromClipboard() {
+    // Text in the clipboard is a normal text paste, which the input box handles
+    const char *text = glfwGetClipboardString(window);
+    if (text != nullptr && text[0] != '\0') return;
+
+    try {
+        if (auto image = ImageInput::ReadClipboardImage()) {
+            AddPendingAttachment(std::move(*image));
+        }
+    } catch (const std::exception &e) {
+        Session::SetError(e.what());
+    }
+}
+
+void GUI::CollectPickedImages() {
+    std::vector<Attachment> images;
+    std::vector<std::string> errors;
+    ImageInput::TakeFileDialogResults(images, errors);
+    for (auto &image: images) AddPendingAttachment(std::move(image));
+    if (!errors.empty()) {
+        std::string message;
+        for (const auto &err: errors) message += (message.empty() ? "" : "\n") + err;
+        Session::SetError(message);
+    }
+}
+
+void GUI::OnFilesDropped(GLFWwindow *, int count, const char **paths) {
+    std::string errors;
+    for (int i = 0; i < count; ++i) {
+        try {
+            AddPendingAttachment(Attachment::FromFile(paths[i]));
+        } catch (const std::exception &e) {
+            errors += (errors.empty() ? "" : "\n") + std::string(e.what());
+        }
+    }
+    if (!errors.empty()) Session::SetError(errors);
+}
+
+bool GUI::DrawImage(const Attachment &attachment, ImVec2 size) {
+    const bool clicked = ImGui::InvisibleButton("##image", size);
+    const ImVec2 min = ImGui::GetItemRectMin();
+    const ImVec2 max = ImGui::GetItemRectMax();
+    ImDrawList *drawList = ImGui::GetWindowDrawList();
+
+    if (const ImageTexture *tex = TextureCache::Get(attachment.data)) {
+        drawList->AddImageRounded(static_cast<ImTextureID>(tex->id), min, max,
+                                  ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 8.0f);
+    } else {
+        // Format stb can't decode (e.g. WEBP): the AI still gets it, we just can't preview it
+        drawList->AddRectFilled(min, max, IM_COL32(40, 42, 50, 255), 8.0f);
+        const std::string label = "[no preview] " + attachment.fileName;
+        drawList->PushClipRect(min, max, true);
+        drawList->AddText(ImVec2(min.x + 8.0f, min.y + 8.0f), IM_COL32(180, 180, 180, 255), label.c_str());
+        drawList->PopClipRect();
+    }
+    if (ImGui::IsItemHovered()) {
+        drawList->AddRect(min, max, IM_COL32(255, 255, 255, 80), 8.0f, 0, 1.5f);
+    }
+    return clicked;
+}
+
+void GUI::RenderMessageAttachments(const std::vector<Attachment> &attachments, bool alignRight) {
+    const float avail = ImGui::GetContentRegionAvail().x;
+    const float maxW = std::min(avail * 0.6f, 420.0f);
+    const float maxH = 320.0f;
+
+    for (const auto &attachment: attachments) {
+        ImGui::PushID(&attachment);
+        const ImVec2 size = FitImage(attachment, maxW, maxH);
+        if (alignRight) {
+            const float offset = avail - size.x - ImGui::GetStyle().ItemSpacing.x;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(offset, 0.0f));
+        }
+        if (DrawImage(attachment, size)) {
+            viewerImage = attachment.data;
+            triggerViewer = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            ImGui::SetTooltip("%s\nClick to enlarge", DescribeAttachment(attachment).c_str());
+        }
+        ImGui::PopID();
+    }
+}
+
+float GUI::PendingAttachmentsHeight() {
+    return pendingAttachments.empty() ? 0.0f : ThumbnailHeight + ImGui::GetStyle().ItemSpacing.y;
+}
+
+void GUI::RenderPendingAttachments() {
+    if (pendingAttachments.empty()) return;
+
+    int removeIndex = -1;
+    for (size_t i = 0; i < pendingAttachments.size(); ++i) {
+        const Attachment &attachment = pendingAttachments[i];
+        ImGui::PushID(static_cast<int>(i));
+        if (i > 0) ImGui::SameLine();
+
+        const ImVec2 size = FitImage(attachment, ThumbnailHeight * 1.6f, ThumbnailHeight);
+        if (DrawImage(attachment, size)) removeIndex = static_cast<int>(i);
+
+        if (ImGui::IsItemHovered()) {
+            // Darken the thumbnail and show what a click does
+            const ImVec2 min = ImGui::GetItemRectMin();
+            const ImVec2 max = ImGui::GetItemRectMax();
+            ImDrawList *drawList = ImGui::GetWindowDrawList();
+            drawList->AddRectFilled(min, max, IM_COL32(0, 0, 0, 150), 8.0f);
+            const ImVec2 textSize = ImGui::CalcTextSize("Remove");
+            drawList->AddText(ImVec2((min.x + max.x - textSize.x) * 0.5f, (min.y + max.y - textSize.y) * 0.5f),
+                              IM_COL32(255, 120, 120, 255), "Remove");
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            ImGui::SetTooltip("%s", DescribeAttachment(attachment).c_str());
+        }
+        ImGui::PopID();
+    }
+
+    ImGui::SameLine();
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (ThumbnailHeight - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::TextDisabled("%zu image(s) attached", pendingAttachments.size());
+
+    if (removeIndex >= 0) {
+        pendingAttachments.erase(pendingAttachments.begin() + removeIndex);
+    }
+}
+
+void GUI::RenderImageViewer() {
+    constexpr const char *popupId = "Image##Viewer";
+    if (triggerViewer) {
+        ImGui::OpenPopup(popupId);
+        triggerViewer = false;
+    }
+
+    const ImGuiViewport *viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    bool open = true;
+    if (ImGui::BeginPopupModal(popupId, &open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+        bool close = ImGui::IsKeyPressed(ImGuiKey_Escape);
+        if (const ImageTexture *tex = TextureCache::Get(viewerImage)) {
+            const float scale = std::min({1.0f, viewport->Size.x * 0.85f / tex->width,
+                                          viewport->Size.y * 0.8f / tex->height});
+            ImGui::Image(static_cast<ImTextureID>(tex->id), ImVec2(tex->width * scale, tex->height * scale));
+            if (ImGui::IsItemClicked()) close = true;
+            ImGui::TextDisabled("%d x %d  -  click or press Esc to close", tex->width, tex->height);
+        } else {
+            ImGui::TextUnformatted("No preview available for this image format.");
+        }
+        if (close) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    if (!ImGui::IsPopupOpen(popupId)) viewerImage.reset();
 }

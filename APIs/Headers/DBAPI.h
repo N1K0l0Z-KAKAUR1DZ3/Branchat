@@ -19,6 +19,9 @@ public:
     static std::vector<RootChat> ExtractGroupRoots(const std::vector<RootChat>& allRoots, int GroupId);
     static std::vector<RootChat> GetRootS();
     static std::vector<Message> GetBaseMessages();
+    static std::vector<Message> ReadMessages(nanodbc::result& result);
+    static void ReadAttachments(nanodbc::result& result, std::vector<Message>& messages);
+    static int SaveAttachment(int messageId, const Attachment& attachment);
 // public:
     static void init();
     // read
@@ -28,7 +31,8 @@ public:
     static Group SaveGroup(const std::string& name);
     static RootChat SaveRootChat(int groupId, const std::string& name);
     static Chat SaveBranchingChat(const std::string& name, int parentId, int rootId, int groupId);
-    static void SaveMessage(const Message& msg);
+    // Saves the message and its attachments in one transaction, then fills in their DB ids.
+    static void SaveMessage(Message& msg);
     // update
     static void UpdateGroupName( int GroupId, const std::string& newName);
     static void UpdateChatName(int chatId, const std::string& newName);

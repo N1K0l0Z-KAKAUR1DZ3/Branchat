@@ -1,16 +1,20 @@
 #pragma once
 #include <chrono>
 #include <iostream>
+#include <vector>
+#include "../Headers/Attachment.h"
 
 #ifndef BRANCHAT1_MESSAGE_H
 #define BRANCHAT1_MESSAGE_H
 
 struct Message {
+    int Id = -1; // DB id, -1 until saved
     int RootId;
     int ChatID;
     std::string Role;
     std::string Content;
     std::chrono::system_clock::time_point Timestamp;
+    std::vector<Attachment> Attachments;
 
     Message(const int rootId, const int chatId, std::string role, std::string content = "", const std::chrono::system_clock::time_point& timestamp = std::chrono::system_clock::now()) :
         RootId(rootId),

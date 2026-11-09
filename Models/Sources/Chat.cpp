@@ -9,11 +9,15 @@ void Chat::PrintData() const {
     PrintConversation();
 }
 
-void Chat::SendPrompt(const std::string& prompt) {
+void Chat::SendPrompt(const std::string& prompt, std::vector<Attachment> attachments) {
     try {
-        std::cout << "[CHAT] SendPrompt triggered on Chat ID: " << id << std::endl;
-        messages.push_back(Message(rootId, id, "user", prompt));
-        DBAPI::SaveMessage(messages.back());
+        std::cout << "[CHAT] SendPrompt triggered on Chat ID: " << id
+                  << " with " << attachments.size() << " image(s)" << std::endl;
+        Message userMsg(rootId, id, "user", prompt);
+        userMsg.Attachments = std::move(attachments);
+        // Save before adding to the chat, so a failed save doesn't leave an unsaved message on screen
+        DBAPI::SaveMessage(userMsg);
+        messages.push_back(std::move(userMsg));
 
         waitingResponse = true;
 

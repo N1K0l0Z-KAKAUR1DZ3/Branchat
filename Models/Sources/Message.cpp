@@ -9,5 +9,7 @@ static std::string formatSqlTimestamp(const std::chrono::system_clock::time_poin
 }
 
 void Message::Print() const  {
-    std::cout << "\t\t\t"<< formatSqlTimestamp(Timestamp) <<" - "<<  Role << ": "<< Content << std::endl;
+    std::cout << "\t\t\t"<< formatSqlTimestamp(Timestamp) <<" - "<<  Role << ": "<< Content;
+    if (!Attachments.empty()) std::cout << " [" << Attachments.size() << " image(s)]";
+    std::cout << std::endl;
 }
